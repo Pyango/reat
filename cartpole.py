@@ -3,6 +3,7 @@ import numpy as np
 
 from entities.activation import relu_activation
 from entities.population import Population
+import zmq
 
 population = Population(
     num_inputs=4,
@@ -47,5 +48,24 @@ def on_success(best):
         observation, reward, done, info = env.step(action)
         env.render()
 
+import json
 
-population.run(compute_fitness, on_success)
+context = zmq.Context()
+
+socket = context.socket(zmq.REQ)
+socket.connect("tcp://localhost:5555")
+
+# population.run(compute_fitness, on_success)
+env = gym.make("CartPole-v1")
+
+observation = env.reset()
+fitness = 0.0
+done = False
+while not done:
+    observation, reward, done, info = env.step(1)
+    socket.send(json.dumps(observation.tolist()).encode())
+    message = socket.recv()
+    print(f"reversed: {message}")
+
+    print(observation, reward, done, info)
+
