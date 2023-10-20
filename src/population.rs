@@ -97,8 +97,11 @@ impl Population {
                 for (index, row) in xvec_2d.iter().enumerate() {
                     let row_vec: Vec<f32> = row.iter().cloned().collect();
                     let outputs = g.activate(&row_vec);
-                    println!("{:?}, {:?}", &outputs, &yvec_2d[index]);
+                    // println!("{:?}, {:?}", &outputs, &yvec_2d[index]);
                     let mse = self.mean_squared_error( &yvec_2d[index], &outputs).unwrap();
+                    if mse.is_nan() {
+                        g.show(index.to_string()).unwrap();
+                    }
                     fitness_values.push(1.0 / (1.0 + mse));
                 }
                 println!("fitness_values, {:?}, avg: {:?}", fitness_values, self.simple_average(&fitness_values));
@@ -119,13 +122,12 @@ impl Population {
             println!("Generation {}", generation);
             println!("And the best genome is: {} with a fitness of {}", best.unwrap().key, *best.unwrap().fitness.borrow());
             println!("Genomes {}", genomes.len());
-            let pretty_string = serde_json::to_string_pretty(&best.unwrap()).unwrap();
-            println!("{}", pretty_string);
-
+            // let pretty_string = serde_json::to_string_pretty(&best.unwrap()).unwrap();
+            // println!("{}", pretty_string);
             if *best.unwrap().fitness.borrow() >= self.fitness_threshold {
+                best.unwrap().show("".to_string()).unwrap();
                 break;
             }
-
             let mut top_genomes: Vec<&Rc<Genome>> = genomes.values().collect();
             top_genomes.sort_by(|a, b| b.fitness.partial_cmp(&a.fitness).unwrap_or(std::cmp::Ordering::Equal));
 

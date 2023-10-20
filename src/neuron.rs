@@ -67,8 +67,9 @@ impl Neuron {
     pub fn deactivate(&self) {
         *self.activated.borrow_mut() = false;
     }
-    pub fn activate(&self, input : &Vec<f32>) -> f32 {
-        self.set_value(FUNCTIONS[*self.activation_function.borrow()](input.iter().sum()));
+    pub fn activate(&self, input: &Vec<f32>) -> f32 {
+        let sum : f32 = input.iter().sum();
+        self.set_value(FUNCTIONS[*self.activation_function.borrow()](sum + self.bias.get_value()));
         *self.activated.borrow_mut() = true;
         self.get_value()
     }

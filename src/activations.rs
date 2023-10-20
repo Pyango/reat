@@ -57,7 +57,7 @@ fn selu_activation(z: f32) -> f32 {
 
 fn softplus_activation(z: f32) -> f32 {
     let z = z.max(-60.0).min(60.0);
-    0.2 * z.ln_1p()
+    (1.0 + z.exp()).ln()
 }
 
 fn identity_activation(z: f32) -> f32 {
@@ -91,7 +91,7 @@ fn abs_activation(z: f32) -> f32 {
 }
 
 fn hat_activation(z: f32) -> f32 {
-    if z > 0.0 {
+    if z.abs() <= 1.0 {
         1.0 - z.abs()
     } else {
         0.0

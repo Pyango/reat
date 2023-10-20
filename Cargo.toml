@@ -14,3 +14,4 @@ gymnasium = { git = "https://github.com/AndrejOrsula/gymnasium_rs.git" }
 ndarray = "0.15"
 rand = "0.8"
 rand_distr = "0.4"
+dot-writer = "0.1.3"

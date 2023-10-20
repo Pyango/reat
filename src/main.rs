@@ -32,7 +32,7 @@ fn main() {
     let x = dataset.slice(s![.., 0..2]);
     let y = dataset.slice(s![.., 2..3]);
 
-    let p = Population::new(2, 1, 100, 0.99);
+    let p = Population::new(2, 1, 100, 0.999);
     p.train(x, y, 10000);
     // println!("{:#?}", p);
 }

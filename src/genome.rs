@@ -8,6 +8,9 @@ use crate::connection::Connection;
 use crate::neuron::Neuron;
 use serde::{Serialize, Serializer};
 use crate::serde::ser::SerializeStruct;
+use std::fs::File;
+use std::io::prelude::*;
+use dot_writer::{Color, DotWriter};
 
 #[derive(Debug)]
 pub struct Genome {
@@ -101,6 +104,23 @@ impl Genome {
         g
     }
 
+    pub fn show(&self, prefix: String) -> std::io::Result<()> {
+        let mut file = File::create(format!("{}{}{}", prefix, self.key.to_string(), ".dot"))?;
+        file.write_all(b"digraph structs {\nedge [arrowhead=vee arrowsize=1]\n").expect("Unable to write to file");
+        for n in self.neurons.borrow_mut().values() {
+            let string = format!("{} [label=\"K={} V={} B={} A={}\"]\n", n.key, n.key, n.value.borrow(), n.bias.get_value(), n.activation_function.borrow());
+            file.write_all(string.as_bytes()).expect("Unable to write to file");
+        }
+
+        for c in self.connections.borrow().values() {
+            let string = format!("{} -> {} [label=\"W={}\"]\n", c.input_key, c.output_key, c.weight.get_value());
+            file.write_all(string.as_bytes()).expect("Unable to write to file");
+        }
+
+        file.write_all(b"}\n").expect("Unable to write to file");
+        Ok(())
+    }
+
     fn get_new_neuron_key(&self) -> i32 {
         let neurones = self.neurons.borrow();
         neurones.keys().max().map_or(1, |&max_key| max_key + 1)
@@ -183,7 +203,7 @@ impl Genome {
 
     fn activate_neurone(&self, key: &i32) -> f32 {
         let neurone = self.get_neurone(key);
-        let mut results = vec![neurone.bias.get_value()];
+        let mut results = vec![];
         for c in self.connections.borrow().values() {
             if c.output_key == neurone.key {
                 let input_neurone = self.get_neurone(&c.input_key);

@@ -20,15 +20,14 @@ impl Default for Attribute {
         Attribute {
             value: RefCell::new(0.0),
             initial_value: RefCell::new(0.0),
-            max_value: 0.0,
-            min_value: 0.0,
+            max_value: 30.0,
+            min_value: -30.0,
             mutate_rate: 0.1,
-            mutate_power: 0.5,
+            mutate_power: 0.1,
             replace_rate: 0.1,
         }
     }
 }
-
 
 impl Serialize for Attribute {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
