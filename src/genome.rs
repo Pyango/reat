@@ -10,7 +10,11 @@ use serde::{Serialize, Serializer};
 use crate::serde::ser::SerializeStruct;
 use std::fs::File;
 use std::io::prelude::*;
-use dot_writer::{Color, DotWriter};
+
+const NEURON_ADD_PROB: f32 = 0.05;
+const NEURON_DELETE_PROB: f32 = 0.01;
+const CONN_ADD_PROB: f32 = 0.05;
+const CONN_DELETE_PROB: f32 = 0.01;
 
 #[derive(Debug)]
 pub struct Genome {
@@ -64,10 +68,10 @@ impl Default for Genome {
             key: 0,
             num_inputs: 0,
             num_outputs: 0,
-            neuron_add_prob: RefCell::new(0.1),
-            neuron_delete_prob: RefCell::new(0.1),
-            conn_add_prob: RefCell::new(0.1),
-            conn_delete_prob: RefCell::new(0.1),
+            neuron_add_prob: RefCell::new(NEURON_ADD_PROB),
+            neuron_delete_prob: RefCell::new(NEURON_DELETE_PROB),
+            conn_add_prob: RefCell::new(CONN_ADD_PROB),
+            conn_delete_prob: RefCell::new(CONN_DELETE_PROB),
             adjusted_fitness: 0.0,
             compatibility_disjoint_coefficient: 0.0,
             generation: 0,
@@ -98,7 +102,7 @@ impl Genome {
 
         for &input_neuron in &input_neurons {
             for &output_neuron in &output_neurons {
-                g.create_connection(input_neuron, output_neuron, 1.0);
+                g.create_connection(input_neuron, output_neuron, 0.0);
             }
         }
         g
@@ -339,19 +343,15 @@ impl Genome {
     }
     pub fn mutate(&self) {
         if random::<f32>() < *self.neuron_add_prob.borrow() {
-            println!("mutate neuron_add_prob");
             self.mutate_add_neurone()
         }
         if random::<f32>() < *self.neuron_delete_prob.borrow() {
-            println!("mutate neuron_delete_prob");
             self.mutate_delete_neurone()
         }
         if random::<f32>() < *self.conn_add_prob.borrow() {
-            println!("mutate conn_add_prob");
             self.mutate_add_connection()
         }
         if random::<f32>() < *self.conn_delete_prob.borrow() {
-            println!("mutate conn_delete_prob");
             self.mutate_delete_connection()
         }
         for connection in self.connections.borrow().values() {
@@ -379,7 +379,6 @@ impl Genome {
             assert!(!self.get_hidden_neuron_keys().contains(&key), "Key present in self hidden neurons.");
             if neurone2.is_none() {
                 self.neurons.borrow_mut().insert(key, Rc::new(neurone1.unwrap().deref().clone()));
-                println!("Key not found");
             } else {
                 self.neurons.borrow_mut().insert(key, Rc::new(neurone1.unwrap().crossover(neurone2.unwrap())));
             }
@@ -389,7 +388,6 @@ impl Genome {
             let connection2 = connections.get(&key);
             if connection2.is_none() {
                 self.connections.borrow_mut().insert(*key, Rc::new(connection.deref().clone()));
-                println!("Key not found");
             } else {
                 self.connections.borrow_mut().insert(*key, Rc::new(connection.crossover(connection2.unwrap())));
             }

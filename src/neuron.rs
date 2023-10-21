@@ -5,6 +5,8 @@ use crate::attribute::Attribute;
 use serde::{Serialize, Serializer};
 use crate::serde::ser::SerializeStruct;
 
+const ACTIVATION_FUNCTION_MUTATE_RATE : f32 = 0.05;
+
 #[derive(Debug, Clone)]
 pub struct Neuron {
     pub key: i32,
@@ -24,7 +26,7 @@ impl Default for Neuron {
             bias: Attribute::default(),
             activated: RefCell::new(false),
             output: false,
-            activation_function_mutate_rate: RefCell::new(0.1),
+            activation_function_mutate_rate: RefCell::new(ACTIVATION_FUNCTION_MUTATE_RATE),
             activation_function: RefCell::new(0),
         }
     }

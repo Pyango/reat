@@ -1,2 +1,2 @@
 watch:
-	cargo watch -w src/ -c -q -x run
+	cargo watch -d 1 -w src/ -c -q -x run
