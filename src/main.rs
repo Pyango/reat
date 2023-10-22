@@ -50,49 +50,39 @@ fn main() {
         .axis_iter(ndarray::Axis(0))
         .map(|row| row.to_vec())
         .collect();
-    let y_view: ArrayView<f32, Ix2> = y.view();
-    let _yvec_2d: Vec<Vec<f32>> = y_view
+    for (index, row) in xvec_2d.iter().enumerate() {
+        let row_vec: Vec<f32> = row.iter().cloned().collect();
+        let b = p.best.borrow();
+        b.activate(&row_vec);
+        b.show(format!("{}_", index));
+    }
+
+    let xor3 = array![
+        [0.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 1.0],
+        [0.0, 1.0, 0.0, 1.0],
+        [0.0, 1.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0, 1.0],
+        [1.0, 0.0, 1.0, 0.0],
+        [1.0, 1.0, 0.0, 0.0],
+        [1.0, 1.0, 1.0, 1.0],
+    ];
+
+    // Slice features (X) and labels (y)
+    let x = xor3.slice(s![.., 0..3]);
+    let y = xor3.slice(s![.., 3..4]);
+
+    let p = Population::new(3, 1, 1000, 0.999);
+    p.train(x, y, 10000);
+    let x_view: ArrayView<f32, Ix2> = x.view();
+    let xvec_2d: Vec<Vec<f32>> = x_view
         .axis_iter(ndarray::Axis(0))
         .map(|row| row.to_vec())
         .collect();
     for (index, row) in xvec_2d.iter().enumerate() {
         let row_vec: Vec<f32> = row.iter().cloned().collect();
         let b = p.best.borrow();
-        let _outputs = b.activate(&row_vec);
+        b.activate(&row_vec);
         b.show(format!("{}_", index));
     }
-
-    // let xor3 = array![
-    //     [0.0, 0.0, 0.0, 0.0],
-    //     [0.0, 0.0, 1.0, 1.0],
-    //     [0.0, 1.0, 0.0, 1.0],
-    //     [0.0, 1.0, 1.0, 0.0],
-    //     [1.0, 0.0, 0.0, 1.0],
-    //     [1.0, 0.0, 1.0, 0.0],
-    //     [1.0, 1.0, 0.0, 0.0],
-    //     [1.0, 1.0, 1.0, 1.0],
-    // ];
-    //
-    // // Slice features (X) and labels (y)
-    // let x = xor3.slice(s![.., 0..3]);
-    // let y = xor3.slice(s![.., 3..4]);
-    //
-    // let p = Population::new(3, 1, 1000, 0.999);
-    // p.train(x, y, 10000);
-    // let x_view: ArrayView<f32, Ix2> = x.view();
-    // let xvec_2d: Vec<Vec<f32>> = x_view
-    //     .axis_iter(ndarray::Axis(0))
-    //     .map(|row| row.to_vec())
-    //     .collect();
-    // let y_view: ArrayView<f32, Ix2> = y.view();
-    // let yvec_2d: Vec<Vec<f32>> = y_view
-    //     .axis_iter(ndarray::Axis(0))
-    //     .map(|row| row.to_vec())
-    //     .collect();
-    // for (index, row) in xvec_2d.iter().enumerate() {
-    //     let row_vec: Vec<f32> = row.iter().cloned().collect();
-    //     let b = p.best.borrow();
-    //     let outputs = b.activate(&row_vec);
-    //     b.show(format!("{}_", index));
-    // }
 }
