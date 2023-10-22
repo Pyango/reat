@@ -3,7 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use std::ops::Deref;
 use rand::seq::SliceRandom;
 use std::rc::Rc;
-use rand::{random, Rng, thread_rng};
+use rand::{random, thread_rng};
 use crate::connection::Connection;
 use crate::neuron::Neuron;
 use serde::{Serialize, Serializer};
@@ -90,7 +90,7 @@ impl Default for Genome {
 
 impl Genome {
     pub fn new(key: u32, num_inputs: i32, num_outputs: i32, _size: i32) -> Self {
-        let mut rng = thread_rng();
+        let _rng = thread_rng();
         let g = Genome {
             key,
             num_inputs,

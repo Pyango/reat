@@ -51,14 +51,14 @@ fn main() {
         .map(|row| row.to_vec())
         .collect();
     let y_view: ArrayView<f32, Ix2> = y.view();
-    let yvec_2d: Vec<Vec<f32>> = y_view
+    let _yvec_2d: Vec<Vec<f32>> = y_view
         .axis_iter(ndarray::Axis(0))
         .map(|row| row.to_vec())
         .collect();
     for (index, row) in xvec_2d.iter().enumerate() {
         let row_vec: Vec<f32> = row.iter().cloned().collect();
         let b = p.best.borrow();
-        let outputs = b.activate(&row_vec);
+        let _outputs = b.activate(&row_vec);
         b.show(format!("{}_", index));
     }
 
