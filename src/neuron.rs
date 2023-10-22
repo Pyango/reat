@@ -51,7 +51,7 @@ impl Serialize for Neuron {
 
 impl Neuron {
     pub fn new(key: i32, output: bool, bias: f32) -> Self {
-        let mut n = Neuron {
+        let n = Neuron {
             key,
             output,
             bias: Attribute::new(bias),

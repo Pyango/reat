@@ -3,31 +3,36 @@ use std::collections::{HashMap, VecDeque};
 use std::ops::Deref;
 use rand::seq::SliceRandom;
 use std::rc::Rc;
-use rand::random;
+use rand::{random, Rng, thread_rng};
 use crate::connection::Connection;
 use crate::neuron::Neuron;
 use serde::{Serialize, Serializer};
 use crate::serde::ser::SerializeStruct;
 use std::fs::File;
 use std::io::prelude::*;
+use rand::distributions::uniform::SampleBorrow;
 
-const NEURON_ADD_PROB: f32 = 0.05;
+const NEURON_ADD_PROB: f32 = 0.01;
 const NEURON_DELETE_PROB: f32 = 0.01;
-const CONN_ADD_PROB: f32 = 0.05;
-const CONN_DELETE_PROB: f32 = 0.01;
+const CONN_ADD_PROB: f32 = 0.1;
+const CONN_DELETE_PROB: f32 = 0.1;
+// const NEURON_ADD_PROB: f32 = 0.05;
+// const NEURON_DELETE_PROB: f32 = 0.01;
+// const CONN_ADD_PROB: f32 = 0.05;
+// const CONN_DELETE_PROB: f32 = 0.01;
 
 #[derive(Debug)]
 pub struct Genome {
     pub key: u32,
     pub num_inputs: i32,
     pub num_outputs: i32,
-    neuron_add_prob: RefCell<f32>,
-    neuron_delete_prob: RefCell<f32>,
-    conn_add_prob: RefCell<f32>,
-    conn_delete_prob: RefCell<f32>,
+    pub neuron_add_prob: RefCell<f32>,
+    pub neuron_delete_prob: RefCell<f32>,
+    pub conn_add_prob: RefCell<f32>,
+    pub conn_delete_prob: RefCell<f32>,
     adjusted_fitness: f32,
     compatibility_disjoint_coefficient: f32,
-    generation: i32,
+    pub generation: RefCell<i32>,
     ancestors: RefCell<[u32; 2]>,
     neurons: RefCell<HashMap<i32, Rc<Neuron>>>,
     connections: RefCell<HashMap<(i32, i32), Rc<Connection>>>,
@@ -74,7 +79,7 @@ impl Default for Genome {
             conn_delete_prob: RefCell::new(CONN_DELETE_PROB),
             adjusted_fitness: 0.0,
             compatibility_disjoint_coefficient: 0.0,
-            generation: 0,
+            generation: RefCell::new(0),
             ancestors: RefCell::new([0,0]),
             neurons: RefCell::new(HashMap::new()),
             connections: RefCell::new(HashMap::new()),
@@ -84,11 +89,16 @@ impl Default for Genome {
 }
 
 impl Genome {
-    pub fn new(key: u32, num_inputs: i32, num_outputs: i32, size: i32) -> Self {
-        let mut g = Genome {
+    pub fn new(key: u32, num_inputs: i32, num_outputs: i32, _size: i32) -> Self {
+        let mut rng = thread_rng();
+        let g = Genome {
             key,
             num_inputs,
             num_outputs,
+            // neuron_add_prob: RefCell::new(rng.gen()),
+            // neuron_delete_prob: RefCell::new(rng.gen()),
+            // conn_add_prob: RefCell::new(rng.gen()),
+            // conn_delete_prob: RefCell::new(rng.gen()),
             ..Genome::default()
         };
         for i in 0..num_inputs {
@@ -183,6 +193,9 @@ impl Genome {
         let mut ancestors_ref = self.ancestors.borrow_mut();
         ancestors_ref[0] = parent1;
         ancestors_ref[1] = parent2;
+    }
+    pub fn set_generation(&self, generation: &i32) {
+        *self.generation.borrow_mut() = *generation;
     }
 
     pub fn activate(&self, inputs: &Vec<f32>) -> Vec<f32> {

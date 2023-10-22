@@ -6,6 +6,8 @@ use crate::{specie};
 use crate::genome::Genome;
 use rand::seq::SliceRandom;
 
+const SURVIVAL_THRESHOLD: i32 = 10;
+
 #[derive(Default, Debug)]
 pub struct Population {
     num_inputs: i32,
@@ -19,20 +21,22 @@ pub struct Population {
     nr_offsprings: i32,
     fitness_threshold: f32,
     pub genomes: RefCell<HashMap<u32, Rc<Genome>>>,
+    pub best: RefCell<Rc<Genome>>,
     species: RefCell<HashMap<u32, specie::Specie>>,
 }
 
 impl Population {
     pub fn new(num_inputs: i32, num_outputs: i32, size: i32, fitness_threshold: f32) -> Self {
-        let mut p = Population {
+        let p = Population {
             last_species_count: 2,
             genomes: RefCell::new(HashMap::new()),
+            survival_threshold: SURVIVAL_THRESHOLD,
             num_inputs,
             num_outputs,
             fitness_threshold,
             ..Population::default()
         };
-        for i in 0..size {
+        for _i in 0..size {
             p.create_genome();
         }
         p
@@ -96,25 +100,31 @@ impl Population {
         }
     }
 
-    pub fn mutate(&self, generation: u32) -> bool {
+    pub fn mutate(&self, generation: i32) -> bool {
         let genomes = self.genomes.borrow().clone();
         let mut best: Option<&Genome> = None;
         for genome in genomes.values() {
+            genome.set_generation(&generation);
             match best {
                 Some(b) => {
                     if genome.fitness > b.fitness {
                         best = Some(genome);
+                        *self.best.borrow_mut() = Rc::clone(genome);
                     }
                 },
                 None => best = Some(genome),
             }
         }
         println!("Generation {}", generation);
-        println!("And the best genome is: {} with a fitness of {}", best.unwrap().key, *best.unwrap().fitness.borrow());
+        println!("And the best genome is: {} with a fitness of {} and generation {}", best.unwrap().key, *best.unwrap().fitness.borrow(), best.unwrap().generation.borrow());
+        println!("neuron_add_prob {}", best.unwrap().neuron_add_prob.borrow());
+        println!("neuron_delete_prob {}", best.unwrap().neuron_delete_prob.borrow());
+        println!("conn_add_prob {}", best.unwrap().conn_add_prob.borrow());
+        println!("conn_delete_prob {}", best.unwrap().conn_delete_prob.borrow());
         println!("Genomes {}", genomes.len());
         // let pretty_string = serde_json::to_string_pretty(&best.unwrap()).unwrap();
         // println!("{}", pretty_string);
-        if *best.unwrap().fitness.borrow() >= self.fitness_threshold || generation == 10000 {
+        if *best.unwrap().fitness.borrow() >= self.fitness_threshold {
             best.unwrap().show("".to_string()).unwrap();
             return true;
         }
@@ -123,30 +133,47 @@ impl Population {
 
         let mut bad_genomes: Vec<&Rc<Genome>> = genomes.values().collect();
         bad_genomes.sort_by(|a, b| a.fitness.partial_cmp(&b.fitness).unwrap_or(std::cmp::Ordering::Equal));
-        let start = (top_genomes.len() as f32 * 0.2) as usize;
-        let end = (top_genomes.len() as f32 * 0.4) as usize;
-        // println!("top_genomes, {:?}", top_genomes);
-        // println!("bad_genomes, {:?}", bad_genomes);
+        let start = (top_genomes.len() as f32 * 0.0) as usize;
+        let end = (top_genomes.len() as f32 * 0.3) as usize;
+        // println!("top_genomes, {}", top_genomes.len());
+        // println!("bad_genomes, {}", bad_genomes.len());
 
+        // println!("Top genome fitnesses");
         for genome in &mut top_genomes[start..end] {
+            // println!("{}", genome.fitness.borrow());
             genome.mutate();
         }
         let crossover_genomes: Vec<&Rc<Genome>> = top_genomes.iter().take((top_genomes.len() as f32 * 0.1) as usize).map(|&genome| genome).collect();
         let genomes_to_delete: Vec<&Rc<Genome>> = bad_genomes.iter().skip((bad_genomes.len() as f32 * 0.1) as usize).take((bad_genomes.len() as f32 * 0.1) as usize).map(|&genome| genome).collect();
-        // println!("crossover_genomes, {:?}", crossover_genomes);
-        // println!("genomes_to_delete, {:?}", genomes_to_delete);
+        // Crossover some genomes and take them after the worst 10% of bad genomes to replace their place so we keep the number of genomes constant
         for bad_genome in genomes_to_delete {
             if let (Some(parent1), Some(parent2)) = (crossover_genomes.choose(&mut rand::thread_rng()), crossover_genomes.choose(&mut rand::thread_rng())) {
                 let new_genome = self.create_genome(); // Assuming create_genome returns a mutable Genome
                 new_genome.crossover(parent1, parent2); // Assuming you want to pass references to parent genomes.
+                new_genome.set_generation(&0);
                 new_genome.mutate();
                 self.genomes.borrow_mut().remove(&bad_genome.key); // Remove the bad genome from the HashMap
             }
         }
+        // Delete the worst 10% of genomes and breed new ones
+        let start = (bad_genomes.len() as f32 * 0.0) as usize;
+        let end = (bad_genomes.len() as f32 * 0.1) as usize;
+        // println!("Worst genome fitnesses");
+        for genome in &mut bad_genomes[start..end] {
+            // println!("{}", genome.fitness.borrow());
+            if *genome.generation.borrow() >= self.survival_threshold {
+                self.genomes.borrow_mut().remove(&genome.key); // Remove the bad genome from the HashMap
+                self.create_genome();
+            } else {
+                genome.set_generation(&0);
+                genome.mutate()
+            }
+        }
+
         return false;
     }
 
-    pub fn train(&self, x: ArrayView<f32, Ix2>, y : ArrayView<f32, Ix2>, generations: u32) {
+    pub fn train(&self, x: ArrayView<f32, Ix2>, y : ArrayView<f32, Ix2>, generations: i32) {
         let x_view: ArrayView<f32, Ix2> = x.view();
         let xvec_2d: Vec<Vec<f32>> = x_view
             .axis_iter(ndarray::Axis(0))

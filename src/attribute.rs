@@ -1,6 +1,6 @@
-use std::cell::{RefCell, RefMut};
+use std::cell::{RefCell};
 
-use approx::assert_relative_eq;
+
 use rand::{Rng, RngCore, thread_rng};
 use rand::rngs::ThreadRng;
 use rand_distr::{Distribution, Normal};
@@ -154,7 +154,7 @@ impl<R: Rng> Attribute<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    use approx::assert_relative_eq;
     #[test]
     fn test_custom_simple_float_rng() {
         let mut my_rng = SimpleFloatRng::new(0.0, 0.1);

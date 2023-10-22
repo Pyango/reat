@@ -6,7 +6,7 @@ unsafe fn board_to_input(board: &Board) -> [[f32; 8]; 8] {
 
     for rank in 0..8 {
         for file in 0..8 {
-            let square = chess::Square::new((rank * 8 + file));
+            let square = chess::Square::new(rank * 8 + file);
             match board.piece_on(square) {
                 Some(piece) => {
                     let piece_value = match piece {
@@ -98,7 +98,7 @@ fn matrix_to_move(matrix: [[f32; 8]; 8]) -> ChessMove {
 }
 
 fn is_move_legal(board: &Board, m: ChessMove) -> bool {
-    let mut movegen = MoveGen::new_legal(&board);
+    let movegen = MoveGen::new_legal(&board);
 
     for legal_move in movegen {
         if legal_move == m {
