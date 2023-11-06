@@ -4,6 +4,9 @@ extern crate serde;
 extern crate serde_json;
 extern crate zmq;
 
+use std::fs::File;
+use bincode::encode_into_std_write;
+
 
 use bincode::{config, Decode, Encode};
 use ndarray::prelude::*;
@@ -21,19 +24,18 @@ mod chess_helpers;
 mod simple_float_rng;
 
 fn main() {
-    let p = Population::new(64, 64, 1, 0.999);
-    let config = config::standard();
-
-
-    let encoded: Vec<u8> = bincode::encode_to_vec(&p, config).unwrap();
-
-    let (decoded, len): (Population, usize) = bincode::decode_from_slice(&encoded[..], config).unwrap();
-
-    assert_eq!(p, decoded);
-    assert_eq!(len, encoded.len()); // read all bytes
-    assert_eq!(p.num_inputs, 64);
-    assert_eq!(p.num_outputs, 64);
-    println!("{:?}", p);
+    // let p = Population::new(64, 64, 1, 0.999);
+    // let config = config::standard();
+    //
+    // let mut f = File::create("./foo.bar").unwrap();
+    // encode_into_std_write(&p, &mut f, config).unwrap();
+    // let mut f = File::open("./foo.bar").unwrap();
+    // let decoded = bincode::decode_from_std_read(&mut f, config).unwrap();
+    //
+    // assert_eq!(p, decoded);
+    // assert_eq!(p.num_inputs, 64);
+    // assert_eq!(p.num_outputs, 64);
+    // println!("{:?}", p);
 
     // for generation in 0..10000 {
     //     let mut f = vec![];
@@ -46,6 +48,8 @@ fn main() {
     //     p.mutate(generation);
     // }
 
+    let mut xor2_file = File::create("./xor2.model").unwrap();
+    let config = config::standard();
     let xor2 = array![
         [0.0, 0.0, 0.0],
         [0.0, 1.0, 1.0],
@@ -56,7 +60,13 @@ fn main() {
     let y = xor2.slice(s![.., 2..3]);
 
     let p = Population::new(2, 1, 1000, 0.999);
-    p.train(x, y, 10000);
+    p.train(x, y, 100);
+    encode_into_std_write(&p, &mut xor2_file, config).unwrap();
+    let mut xor2_file = File::open("./xor2.model").unwrap();
+    let decodede_p : Population = bincode::decode_from_std_read(&mut xor2_file, config).unwrap();
+    assert_eq!(decodede_p.num_inputs, 2);
+    assert_eq!(decodede_p.num_outputs, 1);
+    decodede_p.train(x, y, 10000);
 
     let x_view: ArrayView<f32, Ix2> = x.view();
     let xvec_2d: Vec<Vec<f32>> = x_view
@@ -65,10 +75,13 @@ fn main() {
         .collect();
     for (index, row) in xvec_2d.iter().enumerate() {
         let row_vec: Vec<f32> = row.iter().cloned().collect();
-        let b = p.best.borrow();
+        let b = decodede_p.best.borrow();
         b.activate(&row_vec);
         b.show(format!("{}_", index));
     }
+    let mut xor2_file = File::create("./xor2.model").unwrap();
+    encode_into_std_write(&decodede_p, &mut xor2_file, config).unwrap();
+
     //
     // let xor3 = array![
     //     [0.0, 0.0, 0.0, 0.0],
