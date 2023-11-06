@@ -85,7 +85,6 @@ impl Attribute {
     pub fn mutate_value(&self, rng_g: Option<Box<dyn RngCore>>) -> f32 {
         let mut rng = rng_g.unwrap_or(Box::new(thread_rng()));
         let r: f32 = rng.gen();
-        println!("{}", r);
 
         if r < self.mutate_rate {
             let normal = Normal::new(0.0, self.mutate_power as f64)

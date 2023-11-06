@@ -46,29 +46,29 @@ fn main() {
     //     p.mutate(generation);
     // }
 
-    // let xor2 = array![
-    //     [0.0, 0.0, 0.0],
-    //     [0.0, 1.0, 1.0],
-    //     [1.0, 0.0, 1.0],
-    //     [1.0, 1.0, 0.0]
-    // ];
-    // let x = xor2.slice(s![.., 0..2]);
-    // let y = xor2.slice(s![.., 2..3]);
-    //
-    // let p = Population::new(2, 1, 1000, 0.999);
-    // p.train(x, y, 10000);
-    //
-    // let x_view: ArrayView<f32, Ix2> = x.view();
-    // let xvec_2d: Vec<Vec<f32>> = x_view
-    //     .axis_iter(ndarray::Axis(0))
-    //     .map(|row| row.to_vec())
-    //     .collect();
-    // for (index, row) in xvec_2d.iter().enumerate() {
-    //     let row_vec: Vec<f32> = row.iter().cloned().collect();
-    //     let b = p.best.borrow();
-    //     b.activate(&row_vec);
-    //     b.show(format!("{}_", index));
-    // }
+    let xor2 = array![
+        [0.0, 0.0, 0.0],
+        [0.0, 1.0, 1.0],
+        [1.0, 0.0, 1.0],
+        [1.0, 1.0, 0.0]
+    ];
+    let x = xor2.slice(s![.., 0..2]);
+    let y = xor2.slice(s![.., 2..3]);
+
+    let p = Population::new(2, 1, 1000, 0.999);
+    p.train(x, y, 10000);
+
+    let x_view: ArrayView<f32, Ix2> = x.view();
+    let xvec_2d: Vec<Vec<f32>> = x_view
+        .axis_iter(ndarray::Axis(0))
+        .map(|row| row.to_vec())
+        .collect();
+    for (index, row) in xvec_2d.iter().enumerate() {
+        let row_vec: Vec<f32> = row.iter().cloned().collect();
+        let b = p.best.borrow();
+        b.activate(&row_vec);
+        b.show(format!("{}_", index));
+    }
     //
     // let xor3 = array![
     //     [0.0, 0.0, 0.0, 0.0],
