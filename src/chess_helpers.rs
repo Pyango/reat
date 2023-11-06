@@ -163,15 +163,15 @@ pub unsafe fn play_game(genome: &Genome) -> (f32, Game) {
             }
 
             // Award 1 point for a valid move.
-            println!("VALID MOVE!!");
+            // println!("VALID MOVE!!");
             *genome.fitness.borrow_mut() += 1.0;
         } else {
-            println!("Invalid Move XD, {}", m);
+            // println!("Invalid Move XD, {}", m);
             // Deduct 50 points for an invalid move and stop the game.
             *genome.fitness.borrow_mut() -= 50.0;
             break;
         }
     }
-    println!("Side to move {:?}", game.side_to_move());
+    // println!("Side to move {:?}", game.side_to_move());
     (*genome.fitness.borrow(), game)
 }

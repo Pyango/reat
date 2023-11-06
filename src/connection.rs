@@ -2,8 +2,9 @@ use crate::attribute::Attribute;
 use rand::Rng;
 use serde::{Serialize, Serializer};
 use crate::serde::ser::SerializeStruct;
+use bincode::{Decode, Encode};
 
-#[derive(Default, Debug, Clone)]
+#[derive(Encode, Decode, PartialEq, Default, Debug, Clone)]
 pub struct Connection {
     compatibility_weight_coefficient: f32,
     pub input_key: i32,
@@ -59,6 +60,6 @@ impl Connection {
     }
 
     pub fn mutate(&self) -> f32 {
-        self.weight.mutate_value()
+        self.weight.mutate_value(None)
     }
 }

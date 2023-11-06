@@ -4,10 +4,11 @@ use crate::activations::FUNCTIONS;
 use crate::attribute::Attribute;
 use serde::{Serialize, Serializer};
 use crate::serde::ser::SerializeStruct;
+use bincode::{Decode, Encode};
 
-const ACTIVATION_FUNCTION_MUTATE_RATE : f32 = 0.05;
+const ACTIVATION_FUNCTION_MUTATE_RATE : f32 = 0.1;
 
-#[derive(Debug, Clone)]
+#[derive(Encode, Decode, PartialEq, Debug, Clone)]
 pub struct Neuron {
     pub key: i32,
     pub value: RefCell<f32>,
@@ -77,7 +78,7 @@ impl Neuron {
     }
 
     pub fn mutate(&self) {
-        self.bias.mutate_value();
+        self.bias.mutate_value(None);
         let r: f32 = random(); // Generates a float between 0.0 and 1.0
         if r < *self.activation_function_mutate_rate.borrow() {
             *self.activation_function.borrow_mut() = rand::thread_rng().gen_range(0..=17); // Generates a integer between 0 and 17 inclusive
