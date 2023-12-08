@@ -1,17 +1,16 @@
 use std::cell::RefCell;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{VecDeque};
 use std::ops::Deref;
-use rand::seq::SliceRandom;
-use rand::{random, thread_rng};
-use crate::connection::Connection;
+use rand::seq::{IteratorRandom, SliceRandom};
+use rand::{random, Rng, RngCore, thread_rng};
+use crate::connection::{Connection, ConnectionType};
 use crate::neuron::Neuron;
-use serde::{Serialize, Serializer};
-use crate::serde::ser::SerializeStruct;
 use std::fs::File;
 use std::io::prelude::*;
-use std::sync::Arc;
 use rand::distributions::uniform::SampleBorrow;
 use bincode::{Decode, Encode};
+use crate::helpers::generate_uuid_key;
+use crate::ordered_ref_cell::OrderedRefCell;
 
 const NEURON_ADD_PROB: f32 = 0.01;
 const NEURON_DELETE_PROB: f32 = 0.01;
@@ -24,9 +23,11 @@ const CONN_DELETE_PROB: f32 = 0.1;
 
 #[derive(Encode, Decode, PartialEq, Debug)]
 pub struct Genome {
-    pub key: u32,
-    pub num_inputs: i32,
-    pub num_outputs: i32,
+    pub key: String,
+    pub input_shape: RefCell<Vec<usize>>,
+    pub output_shape: RefCell<Vec<usize>>,
+    pub window_shape: RefCell<Vec<usize>>,
+    pub stride: usize,
     pub neuron_add_prob: RefCell<f32>,
     pub neuron_delete_prob: RefCell<f32>,
     pub conn_add_prob: RefCell<f32>,
@@ -34,46 +35,25 @@ pub struct Genome {
     adjusted_fitness: f32,
     compatibility_disjoint_coefficient: f32,
     pub generation: RefCell<i32>,
-    ancestors: RefCell<[u32; 2]>,
-    pub neurons: RefCell<HashMap<i32, Arc<Neuron>>>,
-    pub connections: RefCell<HashMap<(i32, i32), Arc<Connection>>>,
+    ancestors: RefCell<[String; 2]>,
+    pub neurons: OrderedRefCell<String, Neuron>,
+    pub input: OrderedRefCell<String, Neuron>,
+    pub output: OrderedRefCell<String, Neuron>,
+    pub connections: OrderedRefCell<(String, String), Connection>,
     pub fitness: RefCell<f32>,
-}
-
-impl Serialize for Genome {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-    {
-        let mut state = serializer.serialize_struct("Genome", 15)?; // 15 is the number of fields in Genome
-
-        state.serialize_field("key", &self.key)?;
-        state.serialize_field("num_inputs", &self.num_inputs)?;
-        state.serialize_field("num_outputs", &self.num_outputs)?;
-        state.serialize_field("neuron_add_prob", &*self.neuron_add_prob.borrow())?;
-        state.serialize_field("neuron_delete_prob", &*self.neuron_delete_prob.borrow())?;
-        state.serialize_field("conn_add_prob", &*self.conn_add_prob.borrow())?;
-        state.serialize_field("conn_delete_prob", &*self.conn_delete_prob.borrow())?;
-        state.serialize_field("adjusted_fitness", &self.adjusted_fitness)?;
-        state.serialize_field("compatibility_disjoint_coefficient", &self.compatibility_disjoint_coefficient)?;
-        state.serialize_field("generation", &self.generation)?;
-        state.serialize_field("ancestors", &*self.ancestors.borrow())?;
-        state.serialize_field("neurons", &*self.neurons.borrow())?;
-        state.serialize_field("connections", &self.connections.borrow().iter().map(|((input, output), connection)| {
-            (format!("({}, {})", input, output), Arc::clone(connection))
-        }).collect::<HashMap<String, Arc<Connection>>>())?;
-        state.serialize_field("fitness", &*self.fitness.borrow())?;
-
-        state.end()
-    }
 }
 
 impl Default for Genome {
     fn default() -> Self {
         Genome {
-            key: 0,
-            num_inputs: 0,
-            num_outputs: 0,
+            key: generate_uuid_key(),
+            input: OrderedRefCell::new(),
+            neurons: OrderedRefCell::new(),
+            output: OrderedRefCell::new(),
+            input_shape: RefCell::new(vec![0]),
+            output_shape: RefCell::new(vec![0]),
+            window_shape: RefCell::new(vec![0]),
+            stride: 1,
             neuron_add_prob: RefCell::new(NEURON_ADD_PROB),
             neuron_delete_prob: RefCell::new(NEURON_DELETE_PROB),
             conn_add_prob: RefCell::new(CONN_ADD_PROB),
@@ -81,116 +61,209 @@ impl Default for Genome {
             adjusted_fitness: 0.0,
             compatibility_disjoint_coefficient: 0.0,
             generation: RefCell::new(0),
-            ancestors: RefCell::new([0,0]),
-            neurons: RefCell::new(HashMap::new()),
-            connections: RefCell::new(HashMap::new()),
+            ancestors: RefCell::new(["".to_string(), "".to_string()]),
+            connections: OrderedRefCell::new(),
             fitness: RefCell::new(0.0),
         }
     }
 }
 
 impl Genome {
-    pub fn new(key: u32, num_inputs: i32, num_outputs: i32, _size: i32) -> Self {
+    pub fn new(input_shape: Vec<usize>, window_shape: Vec<usize>, stride: usize, output_shape: Vec<usize>) -> Self {
         let _rng = thread_rng();
         let g = Genome {
-            key,
-            num_inputs,
-            num_outputs,
+            input_shape: RefCell::new(input_shape),
+            window_shape: RefCell::new(window_shape),
+            output_shape: RefCell::new(output_shape),
+            stride,
             // neuron_add_prob: RefCell::new(rng.gen()),
             // neuron_delete_prob: RefCell::new(rng.gen()),
             // conn_add_prob: RefCell::new(rng.gen()),
             // conn_delete_prob: RefCell::new(rng.gen()),
             ..Genome::default()
         };
-        for i in 0..num_inputs {
-            g.create_neuron(-i - 1, false);
-        }
-        for i in 0..num_outputs {
-            g.create_neuron(i + 1, true);
-        }
-        let input_neurons = g.get_input_neuron_keys();
-        let output_neurons = g.get_output_neuron_keys();
+        let input_shape = g.input_shape.borrow().clone();
+        let window_shape = g.window_shape.borrow().clone();
+        let output_shape = g.output_shape.borrow().clone();
 
-        for &input_neuron in &input_neurons {
-            for &output_neuron in &output_neurons {
-                g.create_connection(input_neuron, output_neuron, 0.0);
+        let output_size = output_shape.clone().iter().fold(1, |acc, &x| acc * x);
+        for _ in 0..output_size {
+            g.create_output_neuron();
+        }
+        let hidden_shape: Vec<usize> = input_shape.iter().zip(window_shape.iter())
+            .map(|(&dim, &k_dim)| (dim - k_dim) / stride + 1)
+            .collect();
+
+        // Iterate over the output tensor's shape
+        let mut hidden_coordinates = vec![0; hidden_shape.len()];
+        let mut input_coordinates = vec![0; input_shape.len()];
+        'outer: loop {
+            // Perform the convolution at the current index
+            let mut kernel_coordinates = vec![0; window_shape.len()];
+            // let hidden_index = g.calculate_index(&hidden_coordinates, &hidden_shape);
+            let (hidden_key, _) = g.create_neuron(false);
+            'inner: loop {
+                // Calculate the input index
+                for (i, (&k_i, &s)) in kernel_coordinates.iter().zip(input_shape.iter()).enumerate() {
+                    input_coordinates[i] = hidden_coordinates[i] * stride + k_i;
+                }
+
+                // let input_index = g.calculate_index(&input_coordinates, &g.input_shape.borrow());
+                let (input_key, _) = g.create_input_neuron(false);
+                g.create_connection(ConnectionType::Hidden, input_key, hidden_key.clone(), 0.0);
+
+                // Move to the next index in the kernel
+                for i in (0..kernel_coordinates.len()).rev() {
+                    kernel_coordinates[i] += 1;
+                    if kernel_coordinates[i] < window_shape[i] {
+                        continue 'inner;
+                    }
+                    kernel_coordinates[i] = 0;
+                }
+                break;
+            }
+            for output_index in 0..output_size {
+                let output_neuron = g.output.get_by_index(&output_index).unwrap();
+                g.create_connection(ConnectionType::Output, hidden_key.clone(), output_neuron.borrow().key.clone(), 0.0);
+            }
+
+            // Move to the next index in the output tensor
+            for i in (0..hidden_coordinates.len()).rev() {
+                hidden_coordinates[i] += 1;
+                if hidden_coordinates[i] < hidden_shape[i] {
+                    continue 'outer;
+                }
+                hidden_coordinates[i] = 0;
+            }
+
+            // Check if we've completed iterating over the output tensor
+            if hidden_coordinates.iter().zip(hidden_shape.iter()).all(|(&i, &dim)| i >= dim) {
+                break;
             }
         }
+
+
+        // let input_size = input_shape.borrow().iter().fold(1, |acc, &x| acc * x);
+        //
+        // let mut current_coordinates = vec![0; input_shape.borrow().len()];
+        // // TODO: Make only connection to new nodes. It does not make sense to make connections between the input nodes
+        // for i in 0..input_size {
+        //     let current_node_index = -(i as i32) - 1i32;
+        //     g.create_neuron(current_node_index, false);
+        //     let neighbors = g.adjacent_neighbors(&current_coordinates, &input_shape.borrow());
+        //     for neighbor_coordinates in neighbors {
+        //         let neighbor_node_index = g.calculate_index(&neighbor_coordinates, &input_shape.borrow());
+        //         println!("neighbors {} {:?} {:?} {}", current_node_index, neighbor_coordinates, input_shape.borrow(), -(neighbor_node_index as i32) - 1);
+        //         g.create_connection(current_node_index, -(neighbor_node_index as i32) - 1, 0.0);
+        //     }
+        //     g.increment_coordinates(&mut current_coordinates, &input_shape.borrow());
+        //
+        //     // Connect input nodes to output nodes
+        //     for output_key in 0..output_size {
+        //         g.create_connection(current_node_index as i32, output_key as i32, 0.0);
+        //     }
+        // }
+        //
+        // // Create dynamic output nodes
+        // for output_key in 0..output_size {
+        //     g.create_neuron(output_key as i32, true);
+        // }
         g
     }
+    fn flat_index(&self, shape: Vec<usize>, index: &[usize]) -> usize {
+        index.iter().zip(shape.iter().rev())
+            .fold(0, |acc, (&i, &dim)| acc * dim + i)
+    }
+    fn adjacent_neighbors(&self, coordinates: &Vec<usize>, input_shape: &Vec<usize>) -> Vec<Vec<usize>> {
+        let mut neighbors = Vec::new();
 
+        for i in 0..coordinates.len() {
+            for &offset in [-1, 1].iter() {
+                if (coordinates[i] as i32 + offset) >= 0
+                    && (coordinates[i] as i32 + offset) < input_shape[i] as i32
+                {
+                    let mut neighbor_coordinates = coordinates.clone();
+                    neighbor_coordinates[i] = (coordinates[i] as i32 + offset) as usize;
+                    neighbors.push(neighbor_coordinates);
+                }
+            }
+        }
+        neighbors
+    }
+    fn calculate_index(&self, coordinates: &Vec<usize>, input_shape: &Vec<usize>) -> usize {
+        coordinates
+            .iter()
+            .enumerate()
+            .fold(0, |acc, (i, &x)| acc * input_shape[i] + x)
+    }
+    fn increment_coordinates(&self, coordinates: &mut Vec<usize>, input_shape: &Vec<usize>) {
+        let num_dimensions = coordinates.len();
+        let mut i = num_dimensions - 1;
+
+        while i >= 0 {
+            coordinates[i] += 1;
+
+            if coordinates[i] >= input_shape[i] {
+                coordinates[i] = 0;
+                if i <= 0 {
+                    break; // Exit the loop when we reach the last dimension and wrap around
+                }
+                i -= 1;
+            } else {
+                break;
+            }
+        }
+    }
     pub fn show(&self, prefix: String) -> std::io::Result<()> {
         let mut file = File::create(format!("{}{}{}", prefix, self.key.to_string(), ".dot"))?;
         file.write_all(b"digraph structs {\nedge [arrowhead=vee arrowsize=1]\n").expect("Unable to write to file");
-        for n in self.neurons.borrow_mut().values() {
-            let string = format!("\"{}\" [label=\"K={} V={} B={} A={}\"]\n", n.key, n.key, n.value.borrow(), n.bias.get_value(), n.activation_function.borrow());
+        for (ix, n) in self.neurons.iter() {
+            let neuron = n.borrow();
+            let string = format!("\"{}\" [label=\"K={} V={} B={} A={}\"]\n", ix, ix, neuron.value.borrow(), neuron.bias.get_value(), neuron.activation_function.borrow());
             file.write_all(string.as_bytes()).expect("Unable to write to file");
         }
 
-        for c in self.connections.borrow().values() {
-            let string = format!("\"{}\" -> \"{}\" [label=\"W={}\"]\n", c.input_key, c.output_key, c.weight.get_value());
+        for ((input_key, output_key), c) in self.connections.iter() {
+            let string = format!("\"{}\" -> \"{}\" [label=\"W={}\"]\n", input_key, output_key, c.borrow().weight.get_value());
             file.write_all(string.as_bytes()).expect("Unable to write to file");
         }
 
         file.write_all(b"}\n").expect("Unable to write to file");
         Ok(())
     }
-
-    fn get_new_neuron_key(&self) -> i32 {
-        let neurones = self.neurons.borrow();
-        neurones.keys().max().map_or(1, |&max_key| max_key + 1)
+    fn create_input_neuron(&self, output: bool) -> (String, RefCell<Neuron>) {
+        let n = RefCell::new(Neuron::new(output, 0.5));
+        let key = self.get_new_neuron_key();
+        self.input.insert(key.clone(), n.clone());
+        (key, n.clone())
     }
-
-    fn create_neuron(&self, key: i32, output: bool) -> Arc<Neuron> {
-        let n = Arc::new(Neuron::new(key, output, 0.5));
-        self.neurons.borrow_mut().insert(key, Arc::clone(&n));
-        Arc::clone(&n)
+    fn create_neuron(&self, output: bool) -> (String, RefCell<Neuron>) {
+        let n = RefCell::new(Neuron::new(output, 0.5));
+        let key = self.get_new_neuron_key();
+        self.neurons.insert(key.clone(), n.clone());
+        (key, n)
     }
-    fn create_connection(&self, input_neurone_key: i32, output_neurone_key: i32, weight: f32) {
-        let connection = Connection::new(input_neurone_key, output_neurone_key, weight);
-        self.connections.borrow_mut().insert(connection.get_key(), Arc::new(connection));
+    fn create_output_neuron(&self) -> (String, RefCell<Neuron>) {
+        let n = RefCell::new(Neuron::new(true, 0.5));
+        let key = self.get_new_neuron_key();
+        self.output.insert(key.clone(), n.clone());
+        (key, n)
     }
-
-    fn get_input_neuron_keys(&self) -> Vec<i32> {
-        self.neurons.borrow().iter()
-            .filter_map(|(&key, _)| {
-                if key < 0 {
-                    Some(key)
-                } else {
-                    None
-                }
-            })
-            .collect()
+    fn create_connection(&self, c_type: ConnectionType, input_neuron_key: String, output_neuron_key: String, weight: f32) {
+        let connection = Connection::new(c_type, input_neuron_key, output_neuron_key, weight);
+        self.connections.insert((connection.input_key.clone(), connection.output_key.clone()), RefCell::new(connection));
     }
-    fn get_hidden_neuron_keys(&self) -> Vec<i32> {
-        self.neurons.borrow().iter()
-            .filter_map(|(&key, n)| {
-                if !n.output && key > 0 {
-                    Some(key)
-                } else {
-                    None
-                }
-            })
-            .collect()
+    fn get_new_neuron_key(&self) -> String {
+        generate_uuid_key()
     }
-    fn get_output_neuron_keys(&self) -> Vec<i32> {
-        self.neurons.borrow().iter()
-            .filter_map(|(&key, n)| {
-                if n.output {
-                    Some(key)
-                } else {
-                    None
-                }
-            })
-            .collect()
+    fn get_neuron(&self, ctype: &ConnectionType, key: &String) -> Result<RefCell<Neuron>, String> {
+        match ctype {
+            ConnectionType::Input => self.input.get(key).ok_or("Index out of bounds in Input".to_string()).clone(),
+            ConnectionType::Hidden => self.neurons.get(key).ok_or("Index out of bounds in Hidden".to_string()).clone(),
+            ConnectionType::Output => self.output.get(key).ok_or("Index out of bounds in Output".to_string()).clone(),
+        }
     }
-
-    fn get_neurone(&self, key: &i32) -> Arc<Neuron> {
-        self.neurons.borrow().get(key).cloned().unwrap_or_else(|| {
-            panic!("Neuron with key {} not found!", key)
-        })
-    }
-    fn update_ancestors(&self, parent1: u32, parent2: u32) {
+    fn update_ancestors(&self, parent1: String, parent2: String) {
         let mut ancestors_ref = self.ancestors.borrow_mut();
         ancestors_ref[0] = parent1;
         ancestors_ref[1] = parent2;
@@ -198,49 +271,52 @@ impl Genome {
     pub fn set_generation(&self, generation: &i32) {
         *self.generation.borrow_mut() = *generation;
     }
-
     pub fn activate(&self, inputs: &Vec<f32>) -> Vec<f32> {
         // Check if the length of inputs matches self.num_inputs
-        if inputs.len() != self.num_inputs as usize {
-            panic!("Expected {} inputs, but got {}", self.num_inputs, inputs.len());
+        // if inputs.len() != self.num_inputs as usize {
+        //     panic!("Expected {} inputs, but got {}", self.num_inputs, inputs.len());
+        // }
+        for (_, n) in self.neurons.iter() {
+            n.borrow().deactivate();
         }
-        for n in self.neurons.borrow_mut().values_mut() {
-            n.deactivate();
-        }
-        for (input_value, input_neuron_key) in inputs.iter().zip(self.get_input_neuron_keys()) {
-            let input_neuron = self.get_neurone(&input_neuron_key);
+        for (input_value, (_, input_neuron)) in inputs.iter().zip(self.input.iter()) {
+            let input_neuron = input_neuron.borrow();
             input_neuron.set_value(*input_value);
             *input_neuron.activated.borrow_mut() = true;
         }
-        let mut outputs : Vec<f32> = Vec::new();
-        for key in self.get_output_neuron_keys() {
-            outputs.push(self.activate_neurone(&key));
+        let mut outputs: Vec<f32> = Vec::new();
+        for (key, _) in self.output.iter() {
+            outputs.push(self.activate_neuron(&ConnectionType::Output, &key));
         }
         outputs
     }
 
-    fn activate_neurone(&self, key: &i32) -> f32 {
-        let neurone = self.get_neurone(key);
+    fn activate_neuron(&self, ctype: &ConnectionType, key: &String) -> f32 {
+        let neuron = self.get_neuron(&ctype, key).unwrap().clone();
         let mut results = vec![];
-        for c in self.connections.borrow().values() {
-            if c.output_key == neurone.key {
-                let input_neurone = self.get_neurone(&c.input_key);
-                if !*input_neurone.activated.borrow() {
-                    self.activate_neurone(&input_neurone.key);
+        for ((input_key, output_key), c) in self.connections.iter() {
+            let connection = c.borrow();
+            if *output_key == neuron.borrow().key {
+                let ctype = match connection.c_type {
+                    ConnectionType::Input => ConnectionType::Hidden,
+                    ConnectionType::Hidden => ConnectionType::Hidden,
+                    ConnectionType::Output => ConnectionType::Output,
+                };
+                let input_neuron = self.get_neuron(&ctype, &input_key).unwrap();
+                if !*input_neuron.borrow().activated.borrow() {
+                    self.activate_neuron(&ctype, &input_key);
                 }
-                results.push(*input_neurone.value.borrow() * c.weight.get_value());
+                results.push(*input_neuron.borrow().value.borrow() * connection.weight.get_value());
             }
         }
-        neurone.activate(&results)
+        let x = neuron.borrow().activate(&results); x
     }
 
-    fn connection_makes_loop(&self, input_neuron_key: i32, output_neuron_key: i32) -> bool {
+    fn connection_makes_loop(&self, input_neuron_key: String, output_neuron_key: String) -> bool {
         let mut is_loop = false;
-        let mut queue = VecDeque::new();
+        let mut queue: VecDeque<String> = VecDeque::new();
         queue.push_back(output_neuron_key);
 
-        let connections = self.connections.borrow();
-        let neurons = self.neurons.borrow();
 
         while let Some(neuron_key) = queue.pop_front() {
             if neuron_key == input_neuron_key {
@@ -248,21 +324,17 @@ impl Genome {
                 break;
             }
 
-            let neighbor_keys: Vec<i32> = connections
-                .iter()
-                .filter_map(|(&(input_key, output_key), _)| {
-                    if input_key == neuron_key {
-                        Some(output_key)
+            let neighbor_keys: Vec<String> = self.connections.iter()
+                .filter_map(|((input_key, output_key), _)| {
+                    if *input_key == neuron_key {
+                        Some(output_key.clone())
                     } else {
                         None
                     }
                 })
                 .collect();
 
-            for &neighbor_key in &neighbor_keys {
-                if !neurons.contains_key(&neighbor_key) {
-                    continue;
-                }
+            for neighbor_key in neighbor_keys {
                 if neighbor_key == input_neuron_key {
                     is_loop = true;
                     break;
@@ -274,94 +346,85 @@ impl Genome {
         is_loop
     }
 
+    fn random_input(&self, rng_g: Option<Box<dyn RngCore>>) -> Option<(String, RefCell<Neuron>)> {
+        let mut rng = rng_g.unwrap_or(Box::new(thread_rng()));
+        let r = rng.gen();
+        let (first, second) = if r { (&self.input, &self.neurons) } else { (&self.neurons, &self.input) };
+        first.choose(&mut rng).or_else(|| second.choose(&mut rng))
+    }
+    fn random_output(&self, rng_g: Option<Box<dyn RngCore>>) -> Option<(String, RefCell<Neuron>)> {
+        let mut rng = rng_g.unwrap_or(Box::new(thread_rng()));
+        let r = rng.gen();
+        let (first, second) = if r { (&self.neurons, &self.output) } else { (&self.output, &self.neurons) };
+        first.choose(&mut rng).or_else(|| second.choose(&mut rng))
+    }
     fn mutate_add_connection(&self) {
-        let possible_inputs: Vec<_> = [&self.get_input_neuron_keys()[..], &self.get_hidden_neuron_keys()[..]].concat();
-        let input_neurone_key = *possible_inputs.choose(&mut rand::thread_rng()).unwrap();
-        let possible_outputs: Vec<_> = [&self.get_hidden_neuron_keys()[..], &self.get_output_neuron_keys()[..]].concat();
-        let output_neurone_key = *possible_outputs.choose(&mut rand::thread_rng()).unwrap();
+        let (input_neuron_key, _) = self.random_input(None).unwrap();
+        let (output_neuron_key, _) = self.random_output(None).unwrap();
 
-        if input_neurone_key == output_neurone_key {
+        if input_neuron_key == output_neuron_key {
             return;
         }
-        {
-            let connections = self.connections.borrow(); // Borrowing the RefCell
-            if connections.contains_key(&(input_neurone_key, output_neurone_key))
-                || connections.contains_key(&(output_neurone_key, input_neurone_key))
-            {
-                return;
-            }
-        }
-        if self.connection_makes_loop(input_neurone_key, output_neurone_key) {
+        if self.connections.contains(&(input_neuron_key.clone(), output_neuron_key.clone())) {
             return;
         }
-        self.create_connection(input_neurone_key, output_neurone_key, 0.5);
+        if self.connection_makes_loop(input_neuron_key.clone(), output_neuron_key.clone()) {
+            return;
+        }
+        self.create_connection(ConnectionType::Hidden, input_neuron_key.clone(), output_neuron_key.clone(), 0.5);
     }
-    fn mutate_delete_neurone(&self) {
-        let keys = self.get_hidden_neuron_keys();
+    fn mutate_delete_neuron(&self) {
+        let keys = self.neurons.get_keys();
         if !&keys.is_empty() {
-            let del_key = *keys.choose(&mut rand::thread_rng()).unwrap();
-            let mut connections_to_delete : Vec<(i32, i32)> = vec![];
-            {
-                for ck in self.connections.borrow().keys() {
-                    if del_key == ck.0 || del_key == ck.1 {
-                        connections_to_delete.push(*ck);
-                    }
+            let del_key = keys.choose(&mut rand::thread_rng()).unwrap().clone();
+            let mut connections_to_delete: Vec<(String, String)> = vec![];
+            for ((input_key, output_key), _) in self.connections.iter() {
+                if del_key == input_key || del_key == output_key {
+                    connections_to_delete.push((input_key.clone(), output_key.clone()));
                 }
             }
-            {
-                let mut connections = self.connections.borrow_mut();
-                for ck in connections_to_delete {
-                    connections.remove(&ck);
-                }
+            for ix in connections_to_delete {
+                self.connections.remove(&ix);
             }
-            self.neurons.borrow_mut().remove(&del_key);
+            self.neurons.remove(&del_key);
         }
     }
 
-    fn mutate_add_neurone(&self) {
-        if self.connections.borrow().is_empty() {
+    fn mutate_add_neuron(&self) {
+        if self.connections.is_empty() {
             self.mutate_add_connection();
             return;
         }
-        let connection_keys : Vec<Arc<Connection>> = self.connections.borrow().values().cloned().collect();
-        if let Some(connection_to_split) = connection_keys.choose(&mut rand::thread_rng()) {
-            let new_neuron = self.create_neuron(self.get_new_neuron_key(), false);
-            self.create_connection(connection_to_split.input_key, new_neuron.key, connection_to_split.weight.get_value());
-            self.create_connection(new_neuron.key, connection_to_split.output_key, connection_to_split.weight.get_value());
-            self.connections.borrow_mut().remove(&connection_to_split.get_key());
-        } else {
-            return;
-        }
+        let ((input_key, output_key), c) = self.connections.choose(&mut rand::thread_rng()).unwrap();
+        let connection = c.borrow();
+        let (new_neuron_key, _) = self.create_neuron(false);
+        self.create_connection(connection.c_type.clone(), input_key.clone(), new_neuron_key.clone(), connection.weight.get_value());
+        self.create_connection(connection.c_type.clone(), new_neuron_key, output_key.clone(), connection.weight.get_value());
+        self.connections.remove(&(input_key.clone(), output_key.clone()));
     }
 
     fn mutate_delete_connection(&self) {
-        if self.connections.borrow().is_empty() {
+        if self.connections.is_empty() {
             return;
         }
 
-        let connection_to_del = {
-            let connections = self.connections.borrow();
-            let connections_vec: Vec<Arc<Connection>> = connections.values().cloned().collect();
-            connections_vec.choose(&mut rand::thread_rng()).cloned()
-        };
+        let ((input_key, output_key), _) = self.connections.choose(&mut rand::thread_rng()).unwrap();
 
-        if let Some(connection) = connection_to_del {
-            if self.get_input_neuron_keys().contains(&connection.input_key) {
-                return;
-            }
-            if self.get_output_neuron_keys().contains(&connection.output_key) {
-                return;
-            }
-            self.connections.borrow_mut().remove(&connection.get_key());
+        if self.input.contains(&input_key) {
+            return;
         }
+        if self.output.contains(&output_key) {
+            return;
+        }
+        self.connections.remove(&(input_key.clone(), output_key.clone()));
     }
     pub fn mutate(&self, generation: &i32) {
         self.set_generation(generation);
         if random::<f32>() < *self.neuron_add_prob.borrow() {
-            self.mutate_add_neurone()
+            self.mutate_add_neuron()
         }
         if random::<f32>() < *self.neuron_delete_prob.borrow() {
-            self.mutate_delete_neurone()
+            self.mutate_delete_neuron()
         }
         if random::<f32>() < *self.conn_add_prob.borrow() {
             self.mutate_add_connection()
@@ -369,44 +432,50 @@ impl Genome {
         if random::<f32>() < *self.conn_delete_prob.borrow() {
             self.mutate_delete_connection()
         }
-        for connection in self.connections.borrow().values() {
-            connection.mutate();
+        for (_, connection) in self.connections.iter() {
+            connection.borrow().mutate();
         }
-        for neuron in self.neurons.borrow().values() {
-            neuron.mutate();
+        for (_, neuron) in self.neurons.iter() {
+            neuron.borrow().mutate();
         }
     }
 
-    pub fn crossover(&self, genome1 : &Genome, genome2: &Genome) {
-        let mut parent1 : &Genome = &Genome::default();
-        let mut parent2 : &Genome = &Genome::default();
+    pub fn crossover(&self, genome1: &Genome, genome2: &Genome) {
+        let mut parent1: &Genome = &Genome::default();
+        let mut parent2: &Genome = &Genome::default();
         if genome1.fitness > genome2.fitness {
             (parent1, parent2) = (genome1, genome2);
         } else {
             (parent1, parent2) = (genome2, genome1);
         }
-        for key in parent1.get_hidden_neuron_keys() {
-            let neurons = parent1.neurons.borrow();
-            let neurone1 = neurons.get(&key);
-            let neurone2 = neurons.get(&key);
-            // TODO: Write this simpler by using the rules we have given output neurons keys like negative numbers for checks
-
-            assert!(!self.get_hidden_neuron_keys().contains(&key), "Key present in self hidden neurons.");
-            if neurone2.is_none() {
-                self.neurons.borrow_mut().insert(key, Arc::new(neurone1.unwrap().deref().clone()));
+        for (key, neuron1) in parent1.neurons.iter() {
+            let neuron2 = parent2.neurons.get(&key);
+            if neuron2.is_none() {
+                self.neurons.insert(key.clone(), neuron1.clone());
             } else {
-                self.neurons.borrow_mut().insert(key, Arc::new(neurone1.unwrap().crossover(neurone2.unwrap())));
+                let neuron2 = neuron2.unwrap();
+                self.neurons.insert(key.clone(), neuron1.borrow().crossover(&neuron2.borrow()));
             }
         }
-        for (key, connection) in parent1.connections.borrow().iter() {
-            let connections = parent2.connections.borrow();
-            let connection2 = connections.get(&key);
+        for ((input_key, output_key), connection1) in parent1.connections.iter() {
+            let connection2 = parent2.connections.get(&(input_key.clone(), output_key.clone()));
             if connection2.is_none() {
-                self.connections.borrow_mut().insert(*key, Arc::new(connection.deref().clone()));
+                self.connections.insert((input_key.clone(), output_key.clone()), connection1.clone());
             } else {
-                self.connections.borrow_mut().insert(*key, Arc::new(connection.crossover(connection2.unwrap())));
+                let connection = connection1.borrow();
+                self.connections.insert((input_key.clone(), output_key.clone()), connection1.borrow().crossover(&connection));
             }
         }
-        self.update_ancestors(parent1.key, parent2.key);
+        self.update_ancestors(parent1.key.clone(), parent2.key.clone());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_genome() {
+        let genome = Genome::default();
     }
 }

@@ -8,8 +8,6 @@ edition = "2021"
 [dependencies]
 watch = "0.2.3"
 zmq = "0.9"
-serde = { version = "1.0", features = ["derive", "rc", "alloc", "std"] }
-serde_json = "1.0"
 gymnasium = { git = "https://github.com/AndrejOrsula/gymnasium_rs.git" }
 ndarray = "0.15"
 rand = "0.8"
@@ -18,4 +16,6 @@ dot-writer = "0.1.3"
 chess = "3.2.0"
 approx = "0.5"
 rayon = "1.5"
-bincode = "2.0.0-rc.3"
+bincode = {version = "2.0.0-rc.3", features = ["serde"]}
+indexmap = "2.1.0"
+uuid = { version = "1.6.1", features = ["v4"] }

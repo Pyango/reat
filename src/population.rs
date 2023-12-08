@@ -1,18 +1,20 @@
-use std::cell::RefCell;
+use std::cell::{RefCell};
 use std::collections::HashMap;
 use std::sync::Arc;
 use ndarray::{ArrayView, Ix2};
 use crate::{specie};
 use crate::genome::Genome;
 use rand::seq::SliceRandom;
-use bincode::{config, Decode, Encode};
+use bincode::{Decode, Encode};
 
 const SURVIVAL_THRESHOLD: i32 = 20;
 
 #[derive(Default, Encode, Decode, PartialEq, Debug)]
 pub struct Population {
-    pub num_inputs: i32,
-    pub num_outputs: i32,
+    pub input_shape: RefCell<Vec<usize>>,
+    pub output_shape: RefCell<Vec<usize>>,
+    pub window_shape: RefCell<Vec<usize>>,
+    pub stride: RefCell<usize>,
     pub size: i32,
     last_species_count: i32,
     survival_threshold: i32,
@@ -21,19 +23,21 @@ pub struct Population {
     compatibility_threshold_mutate_power: f32,
     nr_offsprings: i32,
     fitness_threshold: f32,
-    pub genomes: RefCell<HashMap<u32, Arc<Genome>>>,
+    pub genomes: RefCell<HashMap<String, Arc<Genome>>>,
     pub best: RefCell<Arc<Genome>>,
-    species: RefCell<HashMap<u32, specie::Specie>>,
+    species: RefCell<Vec<specie::Specie>>,
 }
 
 impl Population {
-    pub fn new(num_inputs: i32, num_outputs: i32, size: i32, fitness_threshold: f32) -> Self {
+    pub fn new(input_shape: Vec<usize>, window_shape: Vec<usize>, output_shape: Vec<usize>, stride: usize, size: i32, fitness_threshold: f32) -> Self {
         let p = Population {
             last_species_count: 2,
             genomes: RefCell::new(HashMap::new()),
             survival_threshold: SURVIVAL_THRESHOLD,
-            num_inputs,
-            num_outputs,
+            input_shape: RefCell::new(input_shape),
+            window_shape: RefCell::new(window_shape),
+            output_shape: RefCell::new(output_shape),
+            stride: RefCell::new(stride),
             fitness_threshold,
             ..Population::default()
         };
@@ -43,19 +47,10 @@ impl Population {
         p
     }
     fn create_genome(&self) -> Arc<Genome> {
-        let key = self.get_new_genome_key();
-        let genome = Arc::new(Genome::new(key, self.num_inputs, self.num_outputs, self.size));
-        self.genomes.borrow_mut().insert(key, Arc::clone(&genome));
-        Arc::clone(&genome)
+        let genome = Arc::new(Genome::new(self.input_shape.borrow().clone(), self.window_shape.borrow().clone(), self.stride.borrow().clone(), self.output_shape.borrow().clone()));
+        self.genomes.borrow_mut().insert(genome.key.clone(), genome.clone());
+        genome.clone()
     }
-    fn get_new_genome_key(&self) -> u32 {
-        if !self.genomes.borrow().is_empty() {
-            let max_key = self.genomes.borrow().keys().cloned().max().unwrap();
-            return max_key + 1;
-        }
-        return 1;
-    }
-
     fn mean_squared_error(&self, y: &[f32], y_hat: &[f32]) -> Result<f32, &'static str> {
         if y.len() != y_hat.len() {
             return Err("Vectors must have the same length");
@@ -67,11 +62,9 @@ impl Population {
 
         Ok(mse)
     }
-
     fn simple_average(&self, fitness_values: &[f32]) -> f32 {
         fitness_values.iter().sum::<f32>() / fitness_values.len() as f32
     }
-
     fn exponential_moving_average(&self, fitness_values: &[f32], alpha: f32) -> f32 {
         let mut ema = fitness_values[0];
         for &value in &fitness_values[1..] {
@@ -118,7 +111,7 @@ impl Population {
         }
         println!("Generation {}", generation);
         println!("And the best genome is: {} with a fitness of {} and generation {}", best.unwrap().key, *best.unwrap().fitness.borrow(), best.unwrap().generation.borrow());
-        println!("Number of neurons: {} and {} connections.", best.unwrap().neurons.borrow().len(), best.unwrap().connections.borrow().len());
+        println!("Number of neurons: {} and {} connections.", best.unwrap().neurons.len(), best.unwrap().connections.len());
         println!("neuron_add_prob {}", best.unwrap().neuron_add_prob.borrow());
         println!("neuron_delete_prob {}", best.unwrap().neuron_delete_prob.borrow());
         println!("conn_add_prob {}", best.unwrap().conn_add_prob.borrow());
@@ -151,7 +144,7 @@ impl Population {
                 let new_genome = self.create_genome();
                 new_genome.crossover(parent1, parent2);
                 // new_genome.mutate();
-                self.genomes.borrow_mut().remove(&bad_genome.key); // Remove the bad genome from the HashMap
+                self.genomes.borrow_mut().remove(&bad_genome.key); // Remove the bad genome from the IndexMap
             }
         }
         // Delete the worst 10% of genomes and breed new ones
@@ -161,7 +154,7 @@ impl Population {
         for genome in &mut bad_genomes[start..end] {
             // println!("{}", genome.fitness.borrow());
             if *genome.generation.borrow() >= self.survival_threshold {
-                self.genomes.borrow_mut().remove(&genome.key); // Remove the bad genome from the HashMap
+                self.genomes.borrow_mut().remove(&genome.key); // Remove the bad genome from the IndexMap
                 self.create_genome();
             } else {
                 genome.mutate(&generation);

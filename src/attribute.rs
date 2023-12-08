@@ -2,10 +2,7 @@ use std::cell::{RefCell};
 use bincode::{Decode, Encode};
 use rand::{Rng, RngCore, thread_rng};
 use rand_distr::{Distribution, Normal};
-use serde::{Serialize, Serializer};
 use crate::simple_float_rng::{SimpleFloatRng};
-
-use crate::serde::ser::SerializeStruct;
 
 const MAX_VALUE: f32 = 30.0;
 const MIN_VALUE: f32 = -30.0;
@@ -35,23 +32,6 @@ impl Default for Attribute {
             mutate_power: MUTATE_POWER,
             replace_rate: REPLACE_RATE,
         }
-    }
-}
-
-impl Serialize for Attribute {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-    {
-        let mut state = serializer.serialize_struct("Attribute", 7)?;
-        state.serialize_field("value", &*self.value.borrow())?;
-        state.serialize_field("initial_value", &*self.initial_value.borrow())?;
-        state.serialize_field("max_value", &self.max_value)?;
-        state.serialize_field("min_value", &self.min_value)?;
-        state.serialize_field("mutate_rate", &self.mutate_rate)?;
-        state.serialize_field("mutate_power", &self.mutate_power)?;
-        state.serialize_field("replace_rate", &self.replace_rate)?;
-        state.end()
     }
 }
 

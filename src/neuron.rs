@@ -2,15 +2,14 @@ use std::cell::RefCell;
 use rand::{random, Rng};
 use crate::activations::FUNCTIONS;
 use crate::attribute::Attribute;
-use serde::{Serialize, Serializer};
-use crate::serde::ser::SerializeStruct;
 use bincode::{Decode, Encode};
+use crate::helpers::generate_uuid_key;
 
-const ACTIVATION_FUNCTION_MUTATE_RATE : f32 = 0.1;
+const ACTIVATION_FUNCTION_MUTATE_RATE: f32 = 0.1;
 
 #[derive(Encode, Decode, PartialEq, Debug, Clone)]
 pub struct Neuron {
-    pub key: i32,
+    pub key: String,
     pub value: RefCell<f32>,
     pub bias: Attribute,
     pub activated: RefCell<bool>,
@@ -22,7 +21,7 @@ pub struct Neuron {
 impl Default for Neuron {
     fn default() -> Self {
         Neuron {
-            key: 0,
+            key: generate_uuid_key(),
             value: RefCell::new(0.0),
             bias: Attribute::default(),
             activated: RefCell::new(false),
@@ -33,27 +32,9 @@ impl Default for Neuron {
     }
 }
 
-impl Serialize for Neuron {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-    {
-        let mut state = serializer.serialize_struct("Neuron", 7)?;
-        state.serialize_field("key", &self.key)?;
-        state.serialize_field("value", &*self.value.borrow())?;
-        state.serialize_field("bias", &self.bias)?;
-        state.serialize_field("activated", &*self.activated.borrow())?;
-        state.serialize_field("output", &self.output)?;
-        state.serialize_field("activation_function_mutate_rate", &*self.activation_function_mutate_rate.borrow())?;
-        state.serialize_field("activation_function", &*self.activation_function.borrow())?;
-        state.end()
-    }
-}
-
 impl Neuron {
-    pub fn new(key: i32, output: bool, bias: f32) -> Self {
+    pub fn new(output: bool, bias: f32) -> Self {
         let n = Neuron {
-            key,
             output,
             bias: Attribute::new(bias),
             ..Neuron::default()
@@ -64,14 +45,14 @@ impl Neuron {
     pub fn get_value(&self) -> f32 {
         *self.value.borrow()
     }
-    pub fn set_value(&self, value : f32) {
+    pub fn set_value(&self, value: f32) {
         *self.value.borrow_mut() = value;
     }
     pub fn deactivate(&self) {
         *self.activated.borrow_mut() = false;
     }
     pub fn activate(&self, input: &Vec<f32>) -> f32 {
-        let sum : f32 = input.iter().sum();
+        let sum: f32 = input.iter().sum();
         self.set_value(FUNCTIONS[*self.activation_function.borrow()](sum + self.bias.get_value()));
         *self.activated.borrow_mut() = true;
         self.get_value()
@@ -85,13 +66,12 @@ impl Neuron {
         }
     }
 
-    pub fn crossover(&self, neurone1: &Neuron) -> Neuron {
+    pub fn crossover(&self, neurone1: &Neuron) -> RefCell<Neuron> {
         let mut rng = rand::thread_rng();
 
-        Neuron::new(
-            self.key.clone(),
+        RefCell::new(Neuron::new(
             false,
-            if rng.gen::<f64>() > 0.5 { neurone1.bias.get_value() } else { self.bias.get_value() }
-        )
+            if rng.gen::<f64>() > 0.5 { neurone1.bias.get_value() } else { self.bias.get_value() },
+        ))
     }
 }
