@@ -3,14 +3,16 @@ use std::collections::{VecDeque};
 use std::ops::Deref;
 use rand::seq::{IteratorRandom, SliceRandom};
 use rand::{random, Rng, RngCore, thread_rng};
-use crate::connection::{Connection, ConnectionType};
+use crate::connection::{Connection};
 use crate::neuron::Neuron;
 use std::fs::File;
 use std::io::prelude::*;
+use std::rc::Rc;
 use rand::distributions::uniform::SampleBorrow;
 use bincode::{Decode, Encode};
 use crate::helpers::generate_uuid_key;
 use crate::ordered_ref_cell::OrderedRefCell;
+use crate::t::Type;
 
 const NEURON_ADD_PROB: f32 = 0.01;
 const NEURON_DELETE_PROB: f32 = 0.01;
@@ -21,9 +23,9 @@ const CONN_DELETE_PROB: f32 = 0.1;
 // const CONN_ADD_PROB: f32 = 0.05;
 // const CONN_DELETE_PROB: f32 = 0.01;
 
-#[derive(Encode, Decode, PartialEq, Debug)]
+#[derive(Encode, Decode, PartialEq, Debug, Clone)]
 pub struct Genome {
-    pub key: String,
+    pub key: Rc<RefCell<String>>,
     pub input_shape: RefCell<Vec<usize>>,
     pub output_shape: RefCell<Vec<usize>>,
     pub window_shape: RefCell<Vec<usize>>,
@@ -46,7 +48,7 @@ pub struct Genome {
 impl Default for Genome {
     fn default() -> Self {
         Genome {
-            key: generate_uuid_key(),
+            key: Rc::new(RefCell::new(generate_uuid_key())),
             input: OrderedRefCell::new(),
             neurons: OrderedRefCell::new(),
             output: OrderedRefCell::new(),
@@ -101,7 +103,7 @@ impl Genome {
             // Perform the convolution at the current index
             let mut kernel_coordinates = vec![0; window_shape.len()];
             // let hidden_index = g.calculate_index(&hidden_coordinates, &hidden_shape);
-            let (hidden_key, _) = g.create_neuron(false);
+            let (hidden_key, _) = g.create_neuron();
             'inner: loop {
                 // Calculate the input index
                 for (i, (&k_i, &s)) in kernel_coordinates.iter().zip(input_shape.iter()).enumerate() {
@@ -109,8 +111,8 @@ impl Genome {
                 }
 
                 // let input_index = g.calculate_index(&input_coordinates, &g.input_shape.borrow());
-                let (input_key, _) = g.create_input_neuron(false);
-                g.create_connection(ConnectionType::Hidden, input_key, hidden_key.clone(), 0.0);
+                let (input_key, _) = g.create_input_neuron();
+                g.create_connection(input_key, Type::Input, hidden_key.clone(), Type::Hidden, 0.5);
 
                 // Move to the next index in the kernel
                 for i in (0..kernel_coordinates.len()).rev() {
@@ -124,7 +126,7 @@ impl Genome {
             }
             for output_index in 0..output_size {
                 let output_neuron = g.output.get_by_index(&output_index).unwrap();
-                g.create_connection(ConnectionType::Output, hidden_key.clone(), output_neuron.borrow().key.clone(), 0.0);
+                g.create_connection(hidden_key.clone(), Type::Hidden, output_neuron.borrow().key.clone(), Type::Output, 0.5);
             }
 
             // Move to the next index in the output tensor
@@ -137,7 +139,7 @@ impl Genome {
             }
 
             // Check if we've completed iterating over the output tensor
-            if hidden_coordinates.iter().zip(hidden_shape.iter()).all(|(&i, &dim)| i >= dim) {
+            if hidden_coordinates.iter().zip(hidden_shape.iter()).all(|(&i, &dim)| i <= dim) {
                 break;
             }
         }
@@ -169,6 +171,32 @@ impl Genome {
         //     g.create_neuron(output_key as i32, true);
         // }
         g
+    }
+    pub fn deep_clone(&self) -> Self {
+        Genome {
+            key: Rc::new(RefCell::new((*self.key.borrow()).clone())),
+            input_shape: RefCell::new((*self.input_shape.borrow()).clone()),
+            output_shape: RefCell::new((*self.output_shape.borrow()).clone()),
+            window_shape: RefCell::new((*self.window_shape.borrow()).clone()),
+            stride: self.stride,
+            neuron_add_prob: RefCell::new(*self.neuron_add_prob.borrow()),
+            neuron_delete_prob: RefCell::new(*self.neuron_delete_prob.borrow()),
+            conn_add_prob: RefCell::new(*self.conn_add_prob.borrow()),
+            conn_delete_prob: RefCell::new(*self.conn_delete_prob.borrow()),
+            adjusted_fitness: self.adjusted_fitness,
+            compatibility_disjoint_coefficient: self.compatibility_disjoint_coefficient,
+            generation: RefCell::new(*self.generation.borrow()),
+            ancestors: RefCell::new((*self.ancestors.borrow()).clone()),
+            neurons: self.neurons.deep_clone(),
+            input: self.input.deep_clone(),
+            output: self.output.deep_clone(),
+            connections: self.connections.deep_clone(),
+            fitness: RefCell::new(*self.fitness.borrow()),
+        }
+    }
+    pub fn set_key(&self, key: String) -> String {
+        *self.key.borrow_mut() = key.clone();
+        key
     }
     fn flat_index(&self, shape: Vec<usize>, index: &[usize]) -> usize {
         index.iter().zip(shape.iter().rev())
@@ -215,9 +243,19 @@ impl Genome {
         }
     }
     pub fn show(&self, prefix: String) -> std::io::Result<()> {
-        let mut file = File::create(format!("{}{}{}", prefix, self.key.to_string(), ".dot"))?;
+        let mut file = File::create(format!("{}{}{}", prefix, self.key.borrow().to_string(), ".dot"))?;
         file.write_all(b"digraph structs {\nedge [arrowhead=vee arrowsize=1]\n").expect("Unable to write to file");
+        for (ix, n) in self.input.iter() {
+            let neuron = n.borrow();
+            let string = format!("\"{}\" [label=\"K={} V={} B={} A={}\"]\n", ix, ix, neuron.value.borrow(), neuron.bias.get_value(), neuron.activation_function.borrow());
+            file.write_all(string.as_bytes()).expect("Unable to write to file");
+        }
         for (ix, n) in self.neurons.iter() {
+            let neuron = n.borrow();
+            let string = format!("\"{}\" [label=\"K={} V={} B={} A={}\"]\n", ix, ix, neuron.value.borrow(), neuron.bias.get_value(), neuron.activation_function.borrow());
+            file.write_all(string.as_bytes()).expect("Unable to write to file");
+        }
+        for (ix, n) in self.output.iter() {
             let neuron = n.borrow();
             let string = format!("\"{}\" [label=\"K={} V={} B={} A={}\"]\n", ix, ix, neuron.value.borrow(), neuron.bias.get_value(), neuron.activation_function.borrow());
             file.write_all(string.as_bytes()).expect("Unable to write to file");
@@ -231,36 +269,33 @@ impl Genome {
         file.write_all(b"}\n").expect("Unable to write to file");
         Ok(())
     }
-    fn create_input_neuron(&self, output: bool) -> (String, RefCell<Neuron>) {
-        let n = RefCell::new(Neuron::new(output, 0.5));
-        let key = self.get_new_neuron_key();
-        self.input.insert(key.clone(), n.clone());
-        (key, n.clone())
+    fn create_input_neuron(&self) -> (String, RefCell<Neuron>) {
+        let n = RefCell::new(Neuron::new(Type::Input, 0.5));
+        let nk = n.borrow().key.clone();
+        self.input.insert(nk.clone(), n.clone());
+        (nk, n.clone())
     }
-    fn create_neuron(&self, output: bool) -> (String, RefCell<Neuron>) {
-        let n = RefCell::new(Neuron::new(output, 0.5));
-        let key = self.get_new_neuron_key();
-        self.neurons.insert(key.clone(), n.clone());
-        (key, n)
+    fn create_neuron(&self) -> (String, RefCell<Neuron>) {
+        let n = RefCell::new(Neuron::new(Type::Hidden, 0.5));
+        let nk = n.borrow().key.clone();
+        self.neurons.insert(nk.clone(), n.clone());
+        (nk, n)
     }
     fn create_output_neuron(&self) -> (String, RefCell<Neuron>) {
-        let n = RefCell::new(Neuron::new(true, 0.5));
-        let key = self.get_new_neuron_key();
-        self.output.insert(key.clone(), n.clone());
-        (key, n)
+        let n = RefCell::new(Neuron::new(Type::Output, 0.5));
+        let nk = n.borrow().key.clone();
+        self.output.insert(nk.clone(), n.clone());
+        (nk, n)
     }
-    fn create_connection(&self, c_type: ConnectionType, input_neuron_key: String, output_neuron_key: String, weight: f32) {
-        let connection = Connection::new(c_type, input_neuron_key, output_neuron_key, weight);
+    fn create_connection(&self, in_key: String, in_type: Type, on_key: String, on_type: Type, weight: f32) {
+        let connection = Connection::new(in_key, in_type, on_key, on_type, weight);
         self.connections.insert((connection.input_key.clone(), connection.output_key.clone()), RefCell::new(connection));
     }
-    fn get_new_neuron_key(&self) -> String {
-        generate_uuid_key()
-    }
-    fn get_neuron(&self, ctype: &ConnectionType, key: &String) -> Result<RefCell<Neuron>, String> {
+    fn get_neuron(&self, ctype: &Type, key: &String) -> Result<RefCell<Neuron>, String> {
         match ctype {
-            ConnectionType::Input => self.input.get(key).ok_or("Index out of bounds in Input".to_string()).clone(),
-            ConnectionType::Hidden => self.neurons.get(key).ok_or("Index out of bounds in Hidden".to_string()).clone(),
-            ConnectionType::Output => self.output.get(key).ok_or("Index out of bounds in Output".to_string()).clone(),
+            Type::Input => self.input.get(key).ok_or("Index out of bounds in Input".to_string()).clone(),
+            Type::Hidden => self.neurons.get(key).ok_or("Index out of bounds in Hidden".to_string()).clone(),
+            Type::Output => self.output.get(key).ok_or("Index out of bounds in Output".to_string()).clone(),
         }
     }
     fn update_ancestors(&self, parent1: String, parent2: String) {
@@ -282,34 +317,31 @@ impl Genome {
         for (input_value, (_, input_neuron)) in inputs.iter().zip(self.input.iter()) {
             let input_neuron = input_neuron.borrow();
             input_neuron.set_value(*input_value);
-            *input_neuron.activated.borrow_mut() = true;
+            input_neuron.set_activated();
         }
         let mut outputs: Vec<f32> = Vec::new();
         for (key, _) in self.output.iter() {
-            outputs.push(self.activate_neuron(&ConnectionType::Output, &key));
+            let res = self.activate_neuron(&Type::Output, &key);
+            outputs.push(res);
         }
         outputs
     }
 
-    fn activate_neuron(&self, ctype: &ConnectionType, key: &String) -> f32 {
+    fn activate_neuron(&self, ctype: &Type, key: &String) -> f32 {
         let neuron = self.get_neuron(&ctype, key).unwrap().clone();
         let mut results = vec![];
         for ((input_key, output_key), c) in self.connections.iter() {
             let connection = c.borrow();
             if *output_key == neuron.borrow().key {
-                let ctype = match connection.c_type {
-                    ConnectionType::Input => ConnectionType::Hidden,
-                    ConnectionType::Hidden => ConnectionType::Hidden,
-                    ConnectionType::Output => ConnectionType::Output,
-                };
-                let input_neuron = self.get_neuron(&ctype, &input_key).unwrap();
+                let input_neuron = self.get_neuron(&connection.input_type, &input_key).unwrap();
                 if !*input_neuron.borrow().activated.borrow() {
-                    self.activate_neuron(&ctype, &input_key);
+                    self.activate_neuron(&connection.input_type, &input_key);
                 }
                 results.push(*input_neuron.borrow().value.borrow() * connection.weight.get_value());
             }
         }
-        let x = neuron.borrow().activate(&results); x
+        let x = neuron.borrow().activate(&results);
+        return x
     }
 
     fn connection_makes_loop(&self, input_neuron_key: String, output_neuron_key: String) -> bool {
@@ -348,20 +380,19 @@ impl Genome {
 
     fn random_input(&self, rng_g: Option<Box<dyn RngCore>>) -> Option<(String, RefCell<Neuron>)> {
         let mut rng = rng_g.unwrap_or(Box::new(thread_rng()));
-        let r = rng.gen();
-        let (first, second) = if r { (&self.input, &self.neurons) } else { (&self.neurons, &self.input) };
-        first.choose(&mut rng).or_else(|| second.choose(&mut rng))
+        self.input.choose(&mut rng)
+    }
+    fn random_hidden(&self, rng_g: Option<Box<dyn RngCore>>) -> Option<(String, RefCell<Neuron>)> {
+        let mut rng = rng_g.unwrap_or(Box::new(thread_rng()));
+        self.neurons.choose(&mut rng)
     }
     fn random_output(&self, rng_g: Option<Box<dyn RngCore>>) -> Option<(String, RefCell<Neuron>)> {
         let mut rng = rng_g.unwrap_or(Box::new(thread_rng()));
-        let r = rng.gen();
-        let (first, second) = if r { (&self.neurons, &self.output) } else { (&self.output, &self.neurons) };
-        first.choose(&mut rng).or_else(|| second.choose(&mut rng))
+        self.output.choose(&mut rng)
     }
     fn mutate_add_connection(&self) {
-        let (input_neuron_key, _) = self.random_input(None).unwrap();
-        let (output_neuron_key, _) = self.random_output(None).unwrap();
-
+        let (input_neuron_key, input_neuron) = self.random_input(None).unwrap();
+        let (output_neuron_key, output_neuron) = self.random_output(None).unwrap();
         if input_neuron_key == output_neuron_key {
             return;
         }
@@ -371,7 +402,7 @@ impl Genome {
         if self.connection_makes_loop(input_neuron_key.clone(), output_neuron_key.clone()) {
             return;
         }
-        self.create_connection(ConnectionType::Hidden, input_neuron_key.clone(), output_neuron_key.clone(), 0.5);
+        self.create_connection(input_neuron_key.clone(), input_neuron.borrow().t.clone(), output_neuron_key.clone(), output_neuron.borrow().t.clone(), 0.5);
     }
     fn mutate_delete_neuron(&self) {
         let keys = self.neurons.get_keys();
@@ -397,9 +428,9 @@ impl Genome {
         }
         let ((input_key, output_key), c) = self.connections.choose(&mut rand::thread_rng()).unwrap();
         let connection = c.borrow();
-        let (new_neuron_key, _) = self.create_neuron(false);
-        self.create_connection(connection.c_type.clone(), input_key.clone(), new_neuron_key.clone(), connection.weight.get_value());
-        self.create_connection(connection.c_type.clone(), new_neuron_key, output_key.clone(), connection.weight.get_value());
+        let (new_neuron_key, new_neuron) = self.create_neuron();
+        self.create_connection(input_key.clone(), connection.input_type.clone(), new_neuron_key.clone(), new_neuron.borrow().t.clone(), connection.weight.get_value());
+        self.create_connection(new_neuron_key, new_neuron.borrow().t.clone(), output_key.clone(), connection.output_type.clone(), connection.weight.get_value());
         self.connections.remove(&(input_key.clone(), output_key.clone()));
     }
 
@@ -435,7 +466,12 @@ impl Genome {
         for (_, connection) in self.connections.iter() {
             connection.borrow().mutate();
         }
+        // Mutate hidden neurons
         for (_, neuron) in self.neurons.iter() {
+            neuron.borrow().mutate();
+        }
+        // Mutate output neurons
+        for (_, neuron) in self.output.iter() {
             neuron.borrow().mutate();
         }
     }
@@ -466,7 +502,7 @@ impl Genome {
                 self.connections.insert((input_key.clone(), output_key.clone()), connection1.borrow().crossover(&connection));
             }
         }
-        self.update_ancestors(parent1.key.clone(), parent2.key.clone());
+        self.update_ancestors(parent1.key.borrow().clone(), parent2.key.borrow().clone());
     }
 }
 

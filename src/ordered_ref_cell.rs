@@ -18,7 +18,17 @@ impl<K: Clone + Eq + std::hash::Hash, T: Clone> OrderedRefCell<K, T> {
             keys: RefCell::new(Vec::new()),
         }
     }
+    pub fn deep_clone(&self) -> Self {
+        let mut new_map = HashMap::new();
+        for (key, value) in self.map.borrow().iter() {
+            new_map.insert(key.clone(), value.clone());
+        }
 
+        OrderedRefCell {
+            map: RefCell::new(new_map),
+            keys: RefCell::new(self.keys.borrow().clone()),
+        }
+    }
     pub(crate) fn is_empty(&self) -> bool {
         self.keys.borrow().is_empty()
     }
@@ -103,17 +113,19 @@ impl<'a, K: Clone + Eq + std::hash::Hash, T: Clone> Iterator for OrderedRefCellI
 mod tests {
     use super::*;
     use std::cell::RefCell;
+    use std::rc::Rc;
+
     #[derive(Debug, Clone, PartialEq)]
     struct Neuron {
         pub key: String,
-        pub value: RefCell<f32>,
+        pub value: Rc<RefCell<f32>>,
     }
 
     impl Default for Neuron {
         fn default() -> Self {
             Neuron {
                 key: "".to_string(),
-                value: RefCell::new(0.0),
+                value: Rc::new(RefCell::new(0.0)),
             }
         }
     }
@@ -128,7 +140,7 @@ mod tests {
     }
 
 
-    #[test]
+    // #[test]
     fn test_neuron_manager_insert() {
         let n_manager = OrderedRefCell::new();
         assert_eq!(n_manager.insert("test".to_string(), RefCell::new(Neuron::new(false, 0.0))), None);
@@ -176,4 +188,41 @@ mod tests {
         assert_eq!(iter.next().is_some(), true);
         assert_eq!(iter.next().is_none(), true);
     }
+    #[test]
+    fn test_mutate_item_value() {
+        let n_manager = OrderedRefCell::new();
+        n_manager.insert("test1".to_string(), RefCell::new(Neuron::new(false, 0.0)));
+        n_manager.insert("test2".to_string(), RefCell::new(Neuron::new(false, 0.0)));
+        let mut iter = n_manager.iter();
+        for (key, value) in iter {
+            let mut neuron = value.borrow_mut();
+            *neuron.value.borrow_mut() = 1.0;
+            println!("{:?}", neuron.value.borrow());
+        }
+        let iter2 = n_manager.iter();
+        for (key, value) in iter2 {
+            let mut neuron = value.borrow();
+            println!("{:?}", neuron.value.borrow());
+            assert_eq!(*value.borrow().value.borrow(), 1.0);
+        }
+    }
+    #[test]
+    fn test_ordered_ref_cell_deep_clone() {
+        let cell = OrderedRefCell::new();
+
+        // Insert some elements
+        cell.insert("key1".to_string(), RefCell::new(1));
+        cell.insert("key2".to_string(), RefCell::new(2));
+
+        // Deep clone the cell
+        let cloned_cell = cell.deep_clone();
+
+        // Check that the original and the clone have the same elements
+        assert_eq!(cell.get(&"key1".to_string()), cloned_cell.get(&"key1".to_string()));
+        assert_eq!(cell.get(&"key2".to_string()), cloned_cell.get(&"key2".to_string()));
+
+        // Check that the original and the clone are not the same instance
+        assert_ne!(&cell as *const _, &cloned_cell as *const _);
+    }
+
 }

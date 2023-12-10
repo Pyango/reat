@@ -1,4 +1,5 @@
 use std::cell::{RefCell};
+use std::rc::Rc;
 use bincode::{Decode, Encode};
 use rand::{Rng, RngCore, thread_rng};
 use rand_distr::{Distribution, Normal};
@@ -12,8 +13,8 @@ const REPLACE_RATE: f32 = 0.05;
 
 #[derive(Encode, Decode, PartialEq, Debug, Clone)]
 pub struct Attribute {
-    value: RefCell<f32>,
-    initial_value: RefCell<f32>,
+    value: Rc<RefCell<f32>>,
+    initial_value: Rc<RefCell<f32>>,
     max_value: f32,
     min_value: f32,
     mutate_rate: f32,
@@ -24,8 +25,8 @@ pub struct Attribute {
 impl Default for Attribute {
     fn default() -> Self {
         Attribute {
-            value: RefCell::new(0.0),
-            initial_value: RefCell::new(0.0),
+            value: Rc::new(RefCell::new(0.0)),
+            initial_value: Rc::new(RefCell::new(0.0)),
             max_value: MAX_VALUE,
             min_value: MIN_VALUE,
             mutate_rate: MUTATE_RATE,
@@ -38,8 +39,8 @@ impl Default for Attribute {
 impl Attribute {
     pub fn new(value: f32) -> Self {
         Attribute {
-            value: RefCell::new(value),
-            initial_value: RefCell::new(value),
+            value: Rc::new(RefCell::new(value)),
+            initial_value: Rc::new(RefCell::new(value)),
             max_value: MAX_VALUE,
             min_value: MIN_VALUE,
             mutate_rate: MUTATE_RATE,
@@ -70,8 +71,9 @@ impl Attribute {
             let normal = Normal::new(0.0, self.mutate_power as f64)
                 .expect("Failed to create normal distribution");
             let mutation: f32 = normal.sample(&mut *rng) as f32;
-            *self.value.borrow_mut() = self.clamp(*self.value.clone().borrow() + mutation);
-            return *self.value.borrow();
+            let new_value = self.clamp(*self.value.clone().borrow() + mutation);
+            *self.value.borrow_mut() = new_value;
+            return new_value;
         }
 
         if r < self.replace_rate + self.mutate_rate {
@@ -91,8 +93,8 @@ mod tests {
     fn test_mutate_positive_function() {
         let mut my_rng = SimpleFloatRng::new(0.7, 0.01);
         let mut attr = Attribute {
-            value: RefCell::new(1.0),
-            initial_value: RefCell::new(1.0),
+            value: Rc::new(RefCell::new(1.0)),
+            initial_value: Rc::new(RefCell::new(1.0)),
             max_value: 30.0,
             min_value: -30.0,
             mutate_rate: 1.0,
@@ -106,8 +108,8 @@ mod tests {
     fn test_mutate_negative_function() {
         let mut my_rng = SimpleFloatRng::new(0.2, 0.01);
         let mut attr = Attribute {
-            value: RefCell::new(1.0),
-            initial_value: RefCell::new(1.0),
+            value: Rc::new(RefCell::new(1.0)),
+            initial_value: Rc::new(RefCell::new(1.0)),
             max_value: 30.0,
             min_value: -30.0,
             mutate_rate: 1.0,
@@ -121,8 +123,8 @@ mod tests {
     fn test_replace_function() {
         let mut my_rng = SimpleFloatRng::new(0.2, 0.01);
         let mut attr = Attribute {
-            value: RefCell::new(0.4245673),
-            initial_value: RefCell::new(1.0),
+            value: Rc::new(RefCell::new(0.4245673)),
+            initial_value: Rc::new(RefCell::new(1.0)),
             max_value: 30.0,
             min_value: -30.0,
             mutate_rate: 0.0,

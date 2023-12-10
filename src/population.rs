@@ -6,6 +6,7 @@ use crate::{specie};
 use crate::genome::Genome;
 use rand::seq::SliceRandom;
 use bincode::{Decode, Encode};
+use crate::helpers::generate_uuid_key;
 
 const SURVIVAL_THRESHOLD: i32 = 20;
 
@@ -41,15 +42,20 @@ impl Population {
             fitness_threshold,
             ..Population::default()
         };
-        for _i in 0..size {
-            p.create_genome();
+        let base_genome = p.create_genome();
+
+        for _i in 1..size {
+            let genome = base_genome.deep_clone();
+            let mut new_key = generate_uuid_key();
+            new_key = genome.set_key(new_key.clone());
+            p.genomes.borrow_mut().insert(new_key.clone(), Arc::new(genome));
         }
         p
     }
     fn create_genome(&self) -> Arc<Genome> {
         let genome = Arc::new(Genome::new(self.input_shape.borrow().clone(), self.window_shape.borrow().clone(), self.stride.borrow().clone(), self.output_shape.borrow().clone()));
-        self.genomes.borrow_mut().insert(genome.key.clone(), genome.clone());
-        genome.clone()
+        self.genomes.borrow_mut().insert(genome.key.borrow().clone(), genome.clone());
+        genome
     }
     fn mean_squared_error(&self, y: &[f32], y_hat: &[f32]) -> Result<f32, &'static str> {
         if y.len() != y_hat.len() {
@@ -110,8 +116,8 @@ impl Population {
             }
         }
         println!("Generation {}", generation);
-        println!("And the best genome is: {} with a fitness of {} and generation {}", best.unwrap().key, *best.unwrap().fitness.borrow(), best.unwrap().generation.borrow());
-        println!("Number of neurons: {} and {} connections.", best.unwrap().neurons.len(), best.unwrap().connections.len());
+        println!("And the best genome is: {} with a fitness of {} and generation {}", best.unwrap().key.borrow(), *best.unwrap().fitness.borrow(), best.unwrap().generation.borrow());
+        println!("Number of neurons: {} and {} connections.", best.unwrap().neurons.len() + best.unwrap().input.len() + best.unwrap().output.len(), best.unwrap().connections.len());
         println!("neuron_add_prob {}", best.unwrap().neuron_add_prob.borrow());
         println!("neuron_delete_prob {}", best.unwrap().neuron_delete_prob.borrow());
         println!("conn_add_prob {}", best.unwrap().conn_add_prob.borrow());
@@ -136,17 +142,20 @@ impl Population {
             genome.mutate(&generation);
         }
         // Crossover
-        let crossover_genomes: Vec<&Arc<Genome>> = top_genomes.iter().take((top_genomes.len() as f32 * 0.1) as usize).map(|&genome| genome).collect();
-        let genomes_to_delete: Vec<&Arc<Genome>> = bad_genomes.iter().skip((bad_genomes.len() as f32 * 0.1) as usize).take((bad_genomes.len() as f32 * 0.1) as usize).map(|&genome| genome).collect();
-        // Crossover some genomes and take them after the worst 10% of bad genomes to replace their place so we keep the number of genomes constant
-        for bad_genome in genomes_to_delete {
-            if let (Some(parent1), Some(parent2)) = (crossover_genomes.choose(&mut rand::thread_rng()), crossover_genomes.choose(&mut rand::thread_rng())) {
-                let new_genome = self.create_genome();
-                new_genome.crossover(parent1, parent2);
-                // new_genome.mutate();
-                self.genomes.borrow_mut().remove(&bad_genome.key); // Remove the bad genome from the IndexMap
-            }
-        }
+        // let crossover_genomes: Vec<&Arc<Genome>> = top_genomes.iter().take((top_genomes.len() as f32 * 0.1) as usize).map(|&genome| genome).collect();
+        // let genomes_to_delete: Vec<&Arc<Genome>> = bad_genomes.iter().skip((bad_genomes.len() as f32 * 0.1) as usize).take((bad_genomes.len() as f32 * 0.1) as usize).map(|&genome| genome).collect();
+        // // Crossover some genomes and take them after the worst 10% of bad genomes to replace their place so we keep the number of genomes constant
+        // for bad_genome in genomes_to_delete {
+        //     if let (Some(parent1), Some(parent2)) = (crossover_genomes.choose(&mut rand::thread_rng()), crossover_genomes.choose(&mut rand::thread_rng())) {
+        //         if *parent1.key.borrow() == *parent2.key.borrow() {
+        //             continue;
+        //         }
+        //         let new_genome = self.create_genome();
+        //         new_genome.crossover(parent1, parent2);
+        //         // new_genome.mutate();
+        //         self.genomes.borrow_mut().remove(&bad_genome.key.borrow().clone()); // Remove the bad genome from the IndexMap
+        //     }
+        // }
         // Delete the worst 10% of genomes and breed new ones
         let start = (bad_genomes.len() as f32 * 0.0) as usize;
         let end = (bad_genomes.len() as f32 * 0.1) as usize;
@@ -154,7 +163,7 @@ impl Population {
         for genome in &mut bad_genomes[start..end] {
             // println!("{}", genome.fitness.borrow());
             if *genome.generation.borrow() >= self.survival_threshold {
-                self.genomes.borrow_mut().remove(&genome.key); // Remove the bad genome from the IndexMap
+                self.genomes.borrow_mut().remove(&genome.key.borrow().clone()); // Remove the bad genome from the IndexMap
                 self.create_genome();
             } else {
                 genome.mutate(&generation);
