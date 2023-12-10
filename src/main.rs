@@ -27,6 +27,7 @@ mod simple_float_rng;
 mod ordered_ref_cell;
 mod helpers;
 mod t;
+mod clone;
 
 fn main() {
     // Example encode decode
@@ -69,7 +70,7 @@ fn main() {
         .read(true)
         .write(true)
         .create(true)
-        .open("./xor2.model")
+        .open("../xor2.model")
         .unwrap();
     if !file_existed {
         let p = Population::new(vec![2], vec![1], vec![1], 1, 100, 0.999);

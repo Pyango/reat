@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use crate::attribute::Attribute;
 use rand::Rng;
 use bincode::{Decode, Encode};
+use crate::clone::CustomClone;
 use crate::t::Type;
 
 #[derive(Encode, Decode, PartialEq, Default, Debug, Clone)]
@@ -12,6 +13,19 @@ pub struct Connection {
     pub output_key: String,
     pub output_type: Type,
     pub weight: Attribute,
+}
+
+impl CustomClone for Connection {
+    fn clone(&self) -> Self {
+        Connection {
+            compatibility_weight_coefficient: self.compatibility_weight_coefficient,
+            input_key: self.input_key.clone(),
+            input_type: self.input_type.clone(),
+            output_key: self.output_key.clone(),
+            output_type: self.output_type.clone(),
+            weight: self.weight.clone(),
+        }
+    }
 }
 
 impl Connection {

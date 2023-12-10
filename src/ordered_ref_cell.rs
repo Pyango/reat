@@ -2,28 +2,30 @@ use std::cell::{RefCell};
 use std::cmp::PartialEq;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::ops::Deref;
 use bincode::{Decode, Encode};
 use rand::Rng;
+use crate::clone::CustomClone;
+
 
 #[derive(Encode, Decode, PartialEq, Debug, Clone)]
-pub struct OrderedRefCell<K: Clone + Eq + std::hash::Hash + 'static, T: Clone> {
+pub struct OrderedRefCell<K: Clone + Eq + std::hash::Hash + 'static, T: CustomClone + Clone> {
     map: RefCell<HashMap<K, RefCell<T>>>,
     keys: RefCell<Vec<K>>,
 }
 
-impl<K: Clone + Eq + std::hash::Hash, T: Clone> OrderedRefCell<K, T> {
+impl<K: Clone + Eq + std::hash::Hash, T: CustomClone + Clone> OrderedRefCell<K, T> {
     pub(crate) fn new() -> Self {
         OrderedRefCell {
             map: RefCell::new(HashMap::new()),
             keys: RefCell::new(Vec::new()),
         }
     }
-    pub fn deep_clone(&self) -> Self {
+    pub fn clone(&self) -> Self {
         let mut new_map = HashMap::new();
         for (key, value) in self.map.borrow().iter() {
-            new_map.insert(key.clone(), value.clone());
+            new_map.insert(key.clone(), RefCell::new(CustomClone::clone(value.borrow().deref())));
         }
-
         OrderedRefCell {
             map: RefCell::new(new_map),
             keys: RefCell::new(self.keys.borrow().clone()),
@@ -81,12 +83,12 @@ impl<K: Clone + Eq + std::hash::Hash, T: Clone> OrderedRefCell<K, T> {
     }
 }
 
-pub struct OrderedRefCellIterator<'a, K: Clone + Eq + std::hash::Hash + 'static, T: Clone> {
+pub struct OrderedRefCellIterator<'a, K: Clone + Eq + std::hash::Hash + 'static, T: CustomClone + Clone> {
     list: &'a OrderedRefCell<K, T>,
     index: usize,
 }
 
-impl<K: Clone + Eq + std::hash::Hash, T: Clone> OrderedRefCell<K, T> {
+impl<K: Clone + Eq + std::hash::Hash, T: CustomClone + Clone> OrderedRefCell<K, T> {
     pub fn iter(&self) -> OrderedRefCellIterator<K, T> {
         OrderedRefCellIterator {
             list: self,
@@ -95,7 +97,7 @@ impl<K: Clone + Eq + std::hash::Hash, T: Clone> OrderedRefCell<K, T> {
     }
 }
 
-impl<'a, K: Clone + Eq + std::hash::Hash, T: Clone> Iterator for OrderedRefCellIterator<'a, K, T> {
+impl<'a, K: Clone + Eq + std::hash::Hash, T: CustomClone + Clone> Iterator for OrderedRefCellIterator<'a, K, T> {
     type Item = (K, RefCell<T>);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -136,6 +138,13 @@ mod tests {
                 ..Neuron::default()
             };
             n
+        }
+        fn clone(&self) -> Self {
+            println!("Cloning neuron: {:?}", self.key);
+            Neuron {
+                key: self.key.clone(),
+                value: Rc::new(RefCell::new(*self.value.borrow())),
+            }
         }
     }
 
@@ -207,7 +216,7 @@ mod tests {
         }
     }
     #[test]
-    fn test_ordered_ref_cell_deep_clone() {
+    fn test_ordered_ref_cell_clone() {
         let cell = OrderedRefCell::new();
 
         // Insert some elements
@@ -215,7 +224,7 @@ mod tests {
         cell.insert("key2".to_string(), RefCell::new(2));
 
         // Deep clone the cell
-        let cloned_cell = cell.deep_clone();
+        let cloned_cell = cell.clone();
 
         // Check that the original and the clone have the same elements
         assert_eq!(cell.get(&"key1".to_string()), cloned_cell.get(&"key1".to_string()));

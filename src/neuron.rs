@@ -6,6 +6,7 @@ use crate::attribute::Attribute;
 use bincode::{Decode, Encode};
 use crate::helpers::generate_uuid_key;
 use crate::t::Type;
+use crate::clone::CustomClone;
 
 const ACTIVATION_FUNCTION_MUTATE_RATE: f32 = 0.01;
 
@@ -33,6 +34,19 @@ impl Default for Neuron {
         }
     }
 }
+impl CustomClone for Neuron {
+    fn clone(&self) -> Self {
+        Neuron {
+            key: self.key.clone(),
+            value: Rc::new(RefCell::new(*self.value.borrow())),
+            bias: self.bias.clone(),
+            activated: Rc::new(RefCell::new(*self.activated.borrow())),
+            t: self.t.clone(),
+            activation_function_mutate_rate: Rc::new(RefCell::new(*self.activation_function_mutate_rate.borrow())),
+            activation_function: Rc::new(RefCell::new(*self.activation_function.borrow())),
+        }
+    }
+}
 
 impl Neuron {
     pub fn new(t: Type, bias: f32) -> Self {
@@ -43,7 +57,6 @@ impl Neuron {
         };
         n
     }
-
     pub fn get_value(&self) -> f32 {
         *self.value.borrow()
     }
@@ -73,10 +86,12 @@ impl Neuron {
 
     pub fn crossover(&self, neurone1: &Neuron) -> RefCell<Neuron> {
         let mut rng = rand::thread_rng();
-
-        RefCell::new(Neuron::new(
-            Type::Hidden,
-            if rng.gen::<f64>() > 0.5 { neurone1.bias.get_value() } else { self.bias.get_value() },
-        ))
+        let bias = if rng.gen::<f64>() > 0.5 { neurone1.bias.get_value() } else { self.bias.get_value() };
+        RefCell::new(Neuron {
+            key: neurone1.key.clone(),
+            t: Type::Hidden,
+            bias: Attribute::new(bias),
+            ..Neuron::default()
+        })
     }
 }

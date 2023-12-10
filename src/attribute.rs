@@ -3,13 +3,13 @@ use std::rc::Rc;
 use bincode::{Decode, Encode};
 use rand::{Rng, RngCore, thread_rng};
 use rand_distr::{Distribution, Normal};
-
+use crate::simple_float_rng::{SimpleFloatRng};
 
 const MAX_VALUE: f32 = 30.0;
 const MIN_VALUE: f32 = -30.0;
 const MUTATE_RATE: f32 = 0.05;
-const MUTATE_POWER: f32 = 0.05;
-const REPLACE_RATE: f32 = 0.05;
+const MUTATE_POWER: f32 = 0.1;
+const REPLACE_RATE: f32 = 0.005;
 
 #[derive(Encode, Decode, PartialEq, Debug, Clone)]
 pub struct Attribute {
@@ -46,6 +46,17 @@ impl Attribute {
             mutate_rate: MUTATE_RATE,
             mutate_power: MUTATE_POWER,
             replace_rate: REPLACE_RATE,
+        }
+    }
+    fn clone(&self) -> Self {
+        Attribute {
+            value: Rc::new(RefCell::new(*self.value.borrow())),
+            initial_value: Rc::new(RefCell::new(*self.initial_value.borrow())),
+            max_value: self.max_value,
+            min_value: self.min_value,
+            mutate_rate: self.mutate_rate,
+            mutate_power: self.mutate_power,
+            replace_rate: self.replace_rate,
         }
     }
     pub fn get_value(&self) -> f32 {
