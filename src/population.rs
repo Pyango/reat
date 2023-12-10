@@ -4,7 +4,7 @@ use std::sync::Arc;
 use ndarray::{ArrayView, Ix2};
 use crate::{specie};
 use crate::genome::Genome;
-use rand::seq::SliceRandom;
+
 use bincode::{Decode, Encode};
 use crate::helpers::generate_uuid_key;
 

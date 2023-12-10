@@ -1,5 +1,5 @@
 use rand::{Rng, RngCore};
-use rand_distr::{Distribution, Normal};
+
 
 #[derive(Debug)]
 pub struct SimpleFloatRng {

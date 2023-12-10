@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use bincode::{config, Decode, Encode};
+use bincode::{Decode, Encode};
 
 #[derive(Encode, Decode, PartialEq, Default, Debug)]
 pub struct Specie {

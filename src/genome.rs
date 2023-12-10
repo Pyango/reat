@@ -1,8 +1,8 @@
 use std::cell::RefCell;
 use std::collections::{VecDeque};
-use std::ops::Deref;
+
 use rand::seq::{IteratorRandom, SliceRandom};
-use rand::{random, Rng, RngCore, thread_rng};
+use rand::{random, RngCore, thread_rng};
 use crate::connection::{Connection};
 use crate::neuron::Neuron;
 use std::fs::File;
@@ -106,7 +106,7 @@ impl Genome {
             let (hidden_key, _) = g.create_neuron();
             'inner: loop {
                 // Calculate the input index
-                for (i, (&k_i, &s)) in kernel_coordinates.iter().zip(input_shape.iter()).enumerate() {
+                for (i, (&k_i, &_s)) in kernel_coordinates.iter().zip(input_shape.iter()).enumerate() {
                     input_coordinates[i] = hidden_coordinates[i] * stride + k_i;
                 }
 

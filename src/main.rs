@@ -4,14 +4,14 @@ extern crate zmq;
 extern crate uuid;
 use std::fs::{metadata, OpenOptions};
 
-use std::cell::RefCell;
+
 use std::fs::File;
 use bincode::encode_into_std_write;
 
 
-use bincode::{config, Decode, Encode};
+use bincode::{config};
 use ndarray::prelude::*;
-use crate::genome::Genome;
+
 
 use crate::population::Population;
 
@@ -74,7 +74,7 @@ fn main() {
     if !file_existed {
         let p = Population::new(vec![2], vec![1], vec![1], 1, 100, 0.999);
         let g = p.genomes.borrow().clone();
-        let n = g.values().next().unwrap();
+        let _n = g.values().next().unwrap();
         p.train(x, y, 10);
         encode_into_std_write(&p, &mut xor2_file, config).unwrap();
     }

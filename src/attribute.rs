@@ -3,7 +3,7 @@ use std::rc::Rc;
 use bincode::{Decode, Encode};
 use rand::{Rng, RngCore, thread_rng};
 use rand_distr::{Distribution, Normal};
-use crate::simple_float_rng::{SimpleFloatRng};
+
 
 const MAX_VALUE: f32 = 30.0;
 const MIN_VALUE: f32 = -30.0;
