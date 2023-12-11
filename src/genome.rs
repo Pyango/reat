@@ -14,8 +14,8 @@ use crate::helpers::generate_uuid_key;
 use crate::ordered_ref_cell::OrderedRefCell;
 use crate::t::Type;
 
-const NEURON_ADD_PROB: f32 = 0.01;
-const NEURON_DELETE_PROB: f32 = 0.01;
+const NEURON_ADD_PROB: f32 = 0.001;
+const NEURON_DELETE_PROB: f32 = 0.001;
 const CONN_ADD_PROB: f32 = 0.1;
 const CONN_DELETE_PROB: f32 = 0.1;
 // const NEURON_ADD_PROB: f32 = 0.05;

@@ -135,9 +135,13 @@ impl Population {
         let mut bad_genomes: Vec<&Arc<Genome>> = genomes.values().collect();
         bad_genomes.sort_by(|a, b| a.fitness.partial_cmp(&b.fitness).unwrap_or(std::cmp::Ordering::Equal));
         // Mutate
-        let start = (top_genomes.len() as f32 * 0.1) as usize;
-        let end = (top_genomes.len() as f32 * 0.2) as usize;
-        for genome in &mut top_genomes[start..end] {
+        // let start = (top_genomes.len() as f32 * 0.1) as usize;
+        // let end = (top_genomes.len() as f32 * 0.2) as usize;
+        // for genome in &mut top_genomes[start..end] {
+        //     // println!("{}", genome.fitness.borrow());
+        //     genome.mutate(&generation);
+        // }
+        for genome in self.genomes.borrow().values() {
             // println!("{}", genome.fitness.borrow());
             genome.mutate(&generation);
         }
@@ -152,7 +156,7 @@ impl Population {
                 }
                 let new_genome = self.create_genome();
                 new_genome.crossover(parent1, parent2);
-                // new_genome.mutate();
+                new_genome.mutate(&generation);
                 self.genomes.borrow_mut().remove(&bad_genome.key.borrow().clone()); // Remove the bad genome from the IndexMap
             }
         }
@@ -162,11 +166,11 @@ impl Population {
         // println!("Worst genome fitnesses");
         for genome in &mut bad_genomes[start..end] {
             // println!("{}", genome.fitness.borrow());
+            // TODO: Bad genomes get killed right away because we save the current generation instead of incrementing when mutations happen
             if *genome.generation.borrow() >= self.survival_threshold {
                 self.genomes.borrow_mut().remove(&genome.key.borrow().clone()); // Remove the bad genome from the IndexMap
                 let genome = self.create_genome();
                 genome.initialize();
-            } else {
                 genome.mutate(&generation);
             }
         }

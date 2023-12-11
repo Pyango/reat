@@ -57,30 +57,49 @@ fn main() {
     // }
 
     let config = config::standard();
-    let xor2 = array![
-        [0.0, 0.0, 0.0],
-        [0.0, 1.0, 1.0],
-        [1.0, 0.0, 1.0],
-        [1.0, 1.0, 0.0]
+    
+    // Xor2
+    // let xor2 = array![
+    //     [0.0, 0.0, 0.0],
+    //     [0.0, 1.0, 1.0],
+    //     [1.0, 0.0, 1.0],
+    //     [1.0, 1.0, 0.0]
+    // ];
+    // let x = xor2.slice(s![.., 0..2]);
+    // let y = xor2.slice(s![.., 2..3]);
+
+    // Xor3
+    let xor3 = array![
+        [0.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 1.0],
+        [0.0, 1.0, 0.0, 1.0],
+        [0.0, 1.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0, 1.0],
+        [1.0, 0.0, 1.0, 0.0],
+        [1.0, 1.0, 0.0, 0.0],
+        [1.0, 1.0, 1.0, 1.0],
     ];
-    let x = xor2.slice(s![.., 0..2]);
-    let y = xor2.slice(s![.., 2..3]);
-    let file_existed = metadata("./xor2.model").is_ok();
-    let mut xor2_file = OpenOptions::new()
+    
+    // Slice features (X) and labels (y)
+    let x = xor3.slice(s![.., 0..3]);
+    let y = xor3.slice(s![.., 3..4]);
+
+    let file_existed = metadata("./xor3.model").is_ok();
+    let mut file = OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
-        .open("../xor2.model")
+        .open("./xor3.model")
         .unwrap();
     if !file_existed {
-        let p = Population::new(vec![2], vec![1], vec![1], 1, 100, 0.999);
+        let p = Population::new(vec![3], vec![2], vec![1], 1, 1000, 0.999);
         let g = p.genomes.borrow().clone();
         let _n = g.values().next().unwrap();
         p.train(x, y, 10);
-        encode_into_std_write(&p, &mut xor2_file, config).unwrap();
+        encode_into_std_write(&p, &mut file, config).unwrap();
     }
-    let mut xor2_file = File::open("./xor2.model").unwrap();
-    let decodede_p : Population = bincode::decode_from_std_read(&mut xor2_file, config).unwrap();
+    let mut file = File::open("./xor3.model").unwrap();
+    let decodede_p : Population = bincode::decode_from_std_read(&mut file, config).unwrap();
     decodede_p.train(x, y, 10000);
     let x_view: ArrayView<f32, Ix2> = x.view();
     let xvec_2d: Vec<Vec<f32>> = x_view
@@ -93,8 +112,8 @@ fn main() {
         b.activate(&row_vec);
         b.show(format!("{}_", index));
     }
-    let mut xor2_file = File::create("./xor2.model").unwrap();
-    encode_into_std_write(&decodede_p, &mut xor2_file, config).unwrap();
+    let mut file = File::create("./xor3.model").unwrap();
+    encode_into_std_write(&decodede_p, &mut file, config).unwrap();
     //
     //
     // let xor3 = array![
